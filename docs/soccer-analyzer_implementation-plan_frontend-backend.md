@@ -19,68 +19,68 @@ This single plan document contains two separated plans for parallel implementati
   - tag involved players per event/clip
 
 ### A1) Project Setup
-- [ ] Ensure `apps/mobile` runs with Expo
-- [ ] expo-router routing works (`app/_layout.tsx`, tabs)
-- [ ] NativeWind configured and `className` styling works
-- [ ] Firebase client config via `EXPO_PUBLIC_*` env vars (app.config.ts)
-- [ ] Import shared types/metric keys from `@soccer/shared`
-- [ ] Lint + typecheck scripts succeed
+- [x] Ensure `apps/mobile` runs with Expo
+- [x] expo-router routing works (`app/_layout.tsx`, tabs)
+- [x] NativeWind configured and `className` styling works
+- [x] Firebase client config via `EXPO_PUBLIC_*` env vars (app.config.ts)
+- [x] Import shared types/metric keys from `@soccer/shared`
+- [x] Lint + typecheck scripts succeed
 
 ### A2) shadcn-like UI Layer (Native)
 > Implement shadcn/ui-like APIs for RN using NativeWind + small wrappers.
 
-- [ ] `components/ui/button.tsx` (variants: default/outline)
-- [ ] `components/ui/card.tsx` (Card, CardHeader, CardTitle, CardContent)
-- [ ] `components/ui/badge.tsx`
-- [ ] `components/ui/progress.tsx`
-- [ ] `components/ui/tabs.tsx`
-- [ ] `components/ui/toast.tsx` (wrap a toast lib or custom)
-- [ ] (optional) `sheet.tsx` (BottomSheet wrapper)
-- [ ] (optional) `dialog.tsx` (Modal wrapper)
-- [ ] Theme tokens: `lib/theme/tokens.ts` + Tailwind color mapping
-- [ ] Utility: `lib/cn.ts`
+- [x] `components/ui/button.tsx` (variants: default/outline)
+- [x] `components/ui/card.tsx` (Card, CardHeader, CardTitle, CardContent)
+- [x] `components/ui/badge.tsx`
+- [x] `components/ui/progress.tsx`
+- [x] `components/ui/tabs.tsx`
+- [x] `components/ui/toast.tsx` (wrap a toast lib or custom)
+- [x] (optional) `sheet.tsx` (BottomSheet wrapper)
+- [x] (optional) `dialog.tsx` (Modal wrapper)
+- [x] Theme tokens: `lib/theme/tokens.ts` + Tailwind color mapping
+- [x] Utility: `lib/cn.ts`
 
 ### A3) Screens & Flows (expo-router)
-- [ ] Matches list (`/(tabs)/index`)
-  - [ ] list matches from Firestore
-  - [ ] show status + lastRunAt
-- [ ] Match create + upload flow
-  - [ ] select video
-  - [ ] upload to Firebase Storage
-  - [ ] create/update `matches/{matchId}` with `video.storagePath`
-  - [ ] show upload progress + retry
-- [ ] Match dashboard
-  - [ ] summary cards (event counts, top moments, confidence)
-  - [ ] “Improve accuracy” CTA
-- [ ] Clips list
-  - [ ] thumbnails virtualization
-  - [ ] filters by label / confidence
-- [ ] Clip detail (player tagging)
-  - [ ] video player for clip
-  - [ ] show gemini label/summary/tags
-  - [ ] tag involved players (select jerseyNo quickly)
-  - [ ] write to `events/{eventId}.involved.players`
-- [ ] Stats screen
-  - [ ] show metrics grouped
-  - [ ] show confidence per metric
-  - [ ] show explanation tooltips
-- [ ] Settings (accuracy boosters)
-  - [ ] attack direction toggle
-  - [ ] team colors
-  - [ ] camera position/direction court UI (rough)
-  - [ ] formation editor
-  - [ ] roster (jersey numbers)
+- [x] Matches list (`/(tabs)/index`)
+  - [x] list matches from Firestore
+  - [x] show status + lastRunAt
+- [x] Match create + upload flow
+  - [x] select video
+  - [x] upload to Firebase Storage
+  - [x] create/update `matches/{matchId}` with `video.storagePath`
+  - [x] show upload progress + retry
+- [x] Match dashboard
+  - [x] summary cards (event counts, top moments, confidence)
+  - [x] "Improve accuracy" CTA
+- [x] Clips list
+  - [x] thumbnails virtualization
+  - [x] filters by label / confidence
+- [x] Clip detail (player tagging)
+  - [x] video player for clip
+  - [x] show gemini label/summary/tags
+  - [x] tag involved players (select jerseyNo quickly)
+  - [x] write to `events/{eventId}.involved.players`
+- [x] Stats screen
+  - [x] show metrics grouped
+  - [x] show confidence per metric
+  - [x] show explanation tooltips
+- [x] Settings (accuracy boosters)
+  - [x] attack direction toggle
+  - [x] team colors
+  - [x] camera position/direction court UI (rough)
+  - [x] formation editor
+  - [x] roster (jersey numbers)
 
 ### A4) Data Access Patterns
-- [ ] Use Firestore realtime subscriptions for match status, clips/events/stats
-- [ ] Cache thumbnails/clip lists locally (simple memo + list virtualization)
-- [ ] Optimistic updates for manual tagging, revert on failure
-- [ ] Handle partial data gracefully (missing clips, missing stats)
+- [x] Use Firestore realtime subscriptions for match status, clips/events/stats
+- [x] Cache thumbnails/clip lists locally (simple memo + list virtualization)
+- [x] Optimistic updates for manual tagging, revert on failure
+- [x] Handle partial data gracefully (missing clips, missing stats)
 
 ### A5) Quality / UX
-- [ ] Loading/empty/error states on every screen
-- [ ] Offline-ish behavior: show cached last results when possible
-- [ ] Guardrails: warn user when settings changes trigger recompute
+- [x] Loading/empty/error states on every screen
+- [x] Offline-ish behavior: show cached last results when possible
+- [x] Guardrails: warn user when settings changes trigger recompute
 - [ ] Analytics (optional): track funnel (upload → view clips → tag players)
 
 ---
@@ -194,7 +194,7 @@ This single plan document contains two separated plans for parallel implementati
 ## Part C — Shared Contract (FE/BE Alignment)
 
 ### Data ownership (who writes what)
-- [ ] Mobile writes:
+- [x] Mobile writes:
   - matches (create + upload metadata)
   - matches.settings (optional)
   - players roster / formation
@@ -216,11 +216,11 @@ This single plan document contains two separated plans for parallel implementati
 
 ## Definition of Done (per part)
 ### Frontend Done
-- [ ] User can upload match video and see progress
-- [ ] User can browse clips/events and read summaries
-- [ ] User can edit settings and tag players
-- [ ] Stats show with confidence + explanation
-- [ ] No crashes on missing/partial data
+- [x] User can upload match video and see progress
+- [x] User can browse clips/events and read summaries
+- [x] User can edit settings and tag players
+- [x] Stats show with confidence + explanation
+- [x] No crashes on missing/partial data
 
 ### Backend Done
 - [x] Upload triggers analysis job
