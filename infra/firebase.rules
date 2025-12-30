@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /matches/{matchId} {
+      allow read, write: if request.auth != null; // TODO tighten
+    }
+    match /matches/{matchId}/{sub=**} {
+      allow read, write: if request.auth != null; // TODO tighten
+    }
+    match /jobs/{jobId} {
+      allow read, write: if request.auth != null; // TODO tighten
+    }
+  }
+}

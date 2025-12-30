@@ -1,0 +1,27 @@
+{
+  "name": "@soccer/mobile",
+  "version": "0.0.1",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "dev": "expo start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "expo": "^52.0.0",
+    "expo-router": "^4.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.3",
+    "expo-av": "~15.0.1",
+    "firebase": "^10.12.5",
+    "@soccer/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "tailwindcss": "^3.4.10",
+    "nativewind": "^4.1.21",
+    "eslint": "^9.9.0",
+    "@types/react": "^18.2.79"
+  }
+}

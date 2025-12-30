@@ -1,0 +1,15 @@
+{
+  "task": "Classify a soccer clip into an event label and generate short feedback",
+  "output_schema": {
+    "label": "shot|chance|setPiece|dribble|defense|other",
+    "confidence": "0..1",
+    "title": "string",
+    "summary": "string",
+    "tags": [
+      "string"
+    ],
+    "coachTips": [
+      "string"
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "soccer-analyzer",
+  "private": true,
+  "packageManager": "pnpm@9.12.3",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "functions",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:mobile": "pnpm --filter @soccer/mobile dev",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
