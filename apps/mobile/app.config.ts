@@ -4,6 +4,12 @@ export default {
   name: "SoccerAnalyzer",
   slug: "soccer-analyzer",
   scheme: "socceranalyzer",
+  ios: {
+    bundleIdentifier: "com.sscc.soccer-analyzer",
+  },
+  android: {
+    package: "com.sscc.socceranalyzer",
+  },
   extra: {
     firebaseApiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
     firebaseAuthDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,

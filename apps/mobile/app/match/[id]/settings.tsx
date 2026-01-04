@@ -15,6 +15,7 @@ import {
   CardTitle,
   CardContent,
   Button,
+  Badge,
   Dialog,
   DialogHeader,
   DialogTitle,
@@ -23,7 +24,7 @@ import {
   DialogFooter,
 } from "../../../components/ui";
 import { toast } from "../../../components/ui/toast";
-import { useMatch, updateMatch } from "../../../lib/hooks";
+import { useMatch, updateMatch, useDefaultSettings } from "../../../lib/hooks";
 import type { MatchSettings } from "@soccer/shared";
 
 const ATTACK_DIRECTIONS = [
@@ -182,27 +183,45 @@ function RosterEditor({
 export default function SettingsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { match, loading } = useMatch(id);
+  const { settings: defaultSettings, loading: defaultsLoading } = useDefaultSettings();
 
   const [settings, setSettings] = useState<MatchSettings>({});
   const [roster, setRoster] = useState<{ jerseyNo: number; name?: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [relabelOnChange, setRelabelOnChange] = useState(false);
+  const [usingDefaults, setUsingDefaults] = useState(false);
 
+  // Load settings: match settings take priority, fallback to defaults
   useEffect(() => {
-    if (match?.settings) {
-      setSettings(match.settings);
-      setRelabelOnChange(match.settings.relabelOnChange ?? false);
+    if (loading || defaultsLoading) return;
+
+    const hasMatchSettings = match?.settings && Object.keys(match.settings).length > 0;
+
+    if (hasMatchSettings) {
+      // Use match-specific settings
+      setSettings(match.settings!);
+      setRelabelOnChange(match.settings!.relabelOnChange ?? false);
+      setUsingDefaults(false);
+
+      if (match.settings!.formation?.assignments) {
+        setRoster(
+          match.settings!.formation.assignments.map((a) => ({
+            jerseyNo: a.jerseyNo,
+            name: a.role,
+          }))
+        );
+      }
+    } else {
+      // Apply defaults from team settings
+      setUsingDefaults(true);
+      setSettings({
+        teamColors: defaultSettings.teamColors,
+        formation: defaultSettings.formation,
+      });
+      setRoster(defaultSettings.roster ?? []);
     }
-    if (match?.settings?.formation?.assignments) {
-      setRoster(
-        match.settings.formation.assignments.map((a) => ({
-          jerseyNo: a.jerseyNo,
-          name: a.role,
-        }))
-      );
-    }
-  }, [match]);
+  }, [match, loading, defaultSettings, defaultsLoading]);
 
   const handleSave = () => {
     // If settings changed significantly, show confirmation
@@ -244,7 +263,7 @@ export default function SettingsScreen() {
     }
   };
 
-  if (loading) {
+  if (loading || defaultsLoading) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
         <ActivityIndicator size="large" color="rgb(99, 102, 241)" />
@@ -256,11 +275,20 @@ export default function SettingsScreen() {
     <ScrollView className="flex-1 bg-background">
       <View className="p-4">
         <Text className="text-2xl font-semibold text-foreground mb-1">
-          Accuracy Boosters
+          Match Settings
         </Text>
-        <Text className="text-muted-foreground mb-6">
-          Provide more context to improve analysis accuracy.
+        <Text className="text-muted-foreground mb-4">
+          Fine-tune settings for this specific match.
         </Text>
+
+        {usingDefaults && (
+          <View className="bg-muted/50 rounded-lg p-3 mb-4 flex-row items-center">
+            <Badge variant="secondary" className="mr-2">Defaults</Badge>
+            <Text className="text-muted-foreground text-sm flex-1">
+              Using team defaults. Save to customize for this match.
+            </Text>
+          </View>
+        )}
 
         {/* Attack Direction */}
         <Card className="mb-4">
