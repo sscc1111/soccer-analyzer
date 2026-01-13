@@ -1,0 +1,35 @@
+{
+  "version": "v3",
+  "task": "Detect tactical events from a soccer match video with AGGRESSIVE shot detection. Prioritize catching all potential shots even in difficult video conditions.",
+  "instructions": "この試合動画から、以下のイベントを検出してください。\n\n## 重要: シュート検出の優先度\n\nこのプロンプトでは**シュート検出を最優先**します。不確かでも、シュートの可能性があれば報告してください。\n\n---\n\n## 検出対象と視覚的指標\n\n### 1. パス (pass)\nボールが選手間で意図的に移動するプレイ。\n\n**視覚的指標:**\n- 選手の足がボールを蹴る動作が見える\n- ボールが空中または地面を移動する\n- 別の選手（味方または相手）がボールに接触する\n\n**パスタイプの定義:**\n- short: 10m未満（近くの味方へ）\n- medium: 10-25m（中距離パス）\n- long: 25m以上（ロングボール）\n- through: 守備ラインの裏へ通すパス\n- cross: サイドからペナルティエリアへのクロス\n\n**結果の判定:**\n- complete: 味方選手がボールを受け取った\n- incomplete: ボールがラインを割った、または誰も触れなかった\n- intercepted: 相手選手がボールを奪取した\n\n### 2. キャリー (carry)\n選手がボールを保持しながら移動するプレイ。\n\n**視覚的指標:**\n- 選手がボールを足元に置いて移動している\n- ボールが選手から約2m以内を維持\n- 複数回のタッチまたは連続的な接触が見える\n\n**検出条件:**\n- 最小時間: 1秒以上\n- 最小距離: 5m以上（推定）\n\n### 3. ターンオーバー (turnover)\nチーム間でボール所持が変わる瞬間。\n\n**視覚的指標:**\n- tackle: 守備選手の足がボールに接触し、ボールの方向が変わる\n- interception: パスが相手選手に渡る\n- bad_touch: コントロールミスでボールが相手に渡る\n- out_of_bounds: ボールがラインを割り、相手チームのボールになる\n\n---\n\n## ★★★ シュート (shot) - 最重要 ★★★\n\nゴールを狙った攻撃的なプレイ。**不確かでも報告すること。**\n\n### 明確なシュートの視覚的指標（高信頼度）:\n- ペナルティエリア内からの強いキック\n- ボールがゴール方向に飛んでいる\n- ゴールキーパーが飛び込んでいる/反応している\n- 選手の体全体がゴールに向いてスイングしている\n\n### 曖昧だがシュートの可能性がある指標（低信頼度で報告）:\n- ペナルティエリア付近での強いキック動作\n- ボールが急に視界から消える（ゴール方向へ飛んだ可能性）\n- 選手が大きく足を振り上げている\n- キーパーが急に動いた/ジャンプした\n- 周囲の選手が「見守る」姿勢になっている\n- ボールが高く上がった（ループシュートの可能性）\n- ゴールネットが揺れた\n- 選手が喜んでいる/がっかりしている反応\n- バーやポストに当たった音や反応\n\n### シュートと判断すべき場面:\n1. ペナルティエリア内で選手がボールを蹴った → **シュートの可能性大**\n2. ゴール前でボールが消えた → **シュートの可能性あり**\n3. キーパーがセーブ動作をした → **シュートあり**\n4. ゴールキックになった（相手チーム） → **シュートがあった証拠**\n5. 選手が悔しがっている → **シュートを外した可能性**\n\n### シュートの結果の判定:\n- goal: ゴールラインを越えた、または選手が祝っている\n- saved: キーパーが触れた/止めた\n- blocked: フィールドプレイヤーがブロックした\n- missed: ゴール枠を外れた（ワイド、バー上、バー）\n- post: ポストまたはバーに当たった\n\n### シュートの信頼度ガイドライン（特別基準）:\n| 信頼度 | 条件 |\n|--------|------|\n| 0.9-1.0 | シュート動作、ボール軌道、結果がすべて明確 |\n| 0.7-0.9 | シュート動作は見えるが、結果が不明確 |\n| 0.5-0.7 | 強いキック動作があり、ゴール方向の可能性 |\n| 0.3-0.5 | **報告する**: ペナルティエリア付近の強いキック |\n| 0.3未満 | 報告しない |\n\n**重要**: シュートは0.3以上で報告してください（他のイベントは0.5以上）\n\n---\n\n## 5. セットピース (setPiece)\n試合の再開プレイ。\n\n**タイプ:**\n- corner: コーナーキック\n- free_kick: フリーキック\n- penalty: ペナルティキック\n- throw_in: スローイン\n\n---\n\n## 信頼度ガイドライン（シュート以外）\n\n| 信頼度 | 条件 |\n|--------|------|\n| 0.9-1.0 | 蹴り手、ボール軌道、受け手がすべて明確 |\n| 0.7-0.9 | 一部遮蔽があるが、ボール軌道は明確 |\n| 0.5-0.7 | 選手位置とボール出現位置から推測できる |\n| 0.5未満 | **報告しない**（シュート以外） |\n\n---\n\n## 動画品質が悪い場合の対応\n\n以下の場合でも、**シュートの可能性**があれば報告してください：\n- カメラが揺れている\n- 解像度が低い\n- 選手が重なって見えにくい\n- ボールが見えにくい\n\nこれらの場合は信頼度を下げて（0.3-0.5）報告してください。\n\n---\n\n## 検出対象外\n\n以下は検出しないでください：\n- リプレイ映像（スローモーション再生）\n- ハーフタイム、試合終了後の映像\n- ウォームアップ、練習シーン\n\n---\n\n## 注意事項\n\n- タイムスタンプは秒単位（小数点以下1桁）\n- team は home（ホーム）または away（アウェイ）で識別\n- player は背番号（#10など）または位置で識別\n- 各イベントには必ず visualEvidence を記載（何を見て判断したか）\n- **シュートは積極的に報告すること**",
+  "output_schema": {
+    "metadata": {
+      "videoQuality": "good | fair | poor",
+      "qualityIssues": ["occlusion", "camera_shake", "low_resolution", "fast_movement", "none"],
+      "analyzedDurationSec": "number",
+      "shotDetectionNote": "string (any notes about potential shots that were uncertain)"
+    },
+    "events": [
+      {
+        "timestamp": "number (seconds, 1 decimal place)",
+        "type": "pass | carry | turnover | shot | setPiece",
+        "team": "home | away",
+        "player": "string (jersey number like #10 or position description)",
+        "zone": "defensive_third | middle_third | attacking_third",
+        "details": {
+          "passType": "short | medium | long | through | cross (for pass)",
+          "outcome": "complete | incomplete | intercepted (for pass)",
+          "targetPlayer": "string (for pass)",
+          "distance": "number (estimated meters, for carry)",
+          "endReason": "pass | shot | dispossessed | stopped (for carry)",
+          "turnoverType": "tackle | interception | bad_touch | out_of_bounds | other (for turnover)",
+          "shotResult": "goal | saved | blocked | missed | post (for shot)",
+          "shotType": "power | placed | header | volley | long_range | chip (for shot)",
+          "setPieceType": "corner | free_kick | penalty | throw_in (for setPiece)"
+        },
+        "confidence": "number (0.3-1.0 for shots, 0.5-1.0 for others)",
+        "visualEvidence": "string (brief description of what you observed to detect this event)"
+      }
+    ]
+  }
+}

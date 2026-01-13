@@ -1,0 +1,42 @@
+steps:
+  # Step 1: Build Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/soccer-analyzer:latest'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/soccer-analyzer:v8'
+      - '-f'
+      - 'services/analyzer/Dockerfile'
+      - '.'
+
+  # Step 2: Push image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/soccer-analyzer:latest'
+
+  # Step 3: Deploy to Cloud Run with environment variables
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'soccer-analyzer'
+      - '--image=gcr.io/$PROJECT_ID/soccer-analyzer:latest'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--memory=4Gi'
+      - '--cpu=2'
+      - '--timeout=3600'
+      - '--concurrency=10'
+      - '--max-instances=5'
+      - '--set-env-vars=NODE_ENV=production,GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=us-central1,GEMINI_LOCATION=global,GEMINI_MODEL=gemini-3-flash-preview,STORAGE_BUCKET=$PROJECT_ID.firebasestorage.app,ANALYZER_TIER=1,GEMINI_CONTEXT_CACHE_ENABLED=true,GEMINI_CONTEXT_CACHE_TTL=3600,GEMINI_VIDEO_UPLOAD_FULL=true,PROMPT_VERSION=v3,USE_MULTIPASS_DETECTION=true'
+
+images:
+  - 'gcr.io/$PROJECT_ID/soccer-analyzer:latest'
+  - 'gcr.io/$PROJECT_ID/soccer-analyzer:v8'
+timeout: '1800s'
+options:
+  machineType: 'E2_HIGHCPU_8'

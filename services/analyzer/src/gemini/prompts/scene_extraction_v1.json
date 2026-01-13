@@ -1,0 +1,33 @@
+{
+  "version": "scene_extraction_v1",
+  "task": "サッカー試合動画から重要なシーンを抽出し、JSONで返す",
+  "extraction_criteria": [
+    "ゴールチャンス（シュート、決定機）",
+    "セットピース（コーナー、フリーキック、PK）",
+    "危険なドリブル突破",
+    "重要なディフェンス（タックル、インターセプト）",
+    "ターンオーバー（ボール奪取、パスカット）",
+    "ゴールシーン",
+    "キーパーのセーブ"
+  ],
+  "output_schema": {
+    "scenes": {
+      "type": "array",
+      "items": {
+        "startSec": "number",
+        "endSec": "number",
+        "type": "shot|chance|setPiece|dribble|defense|turnover|goal|save|other",
+        "importance": "number (0.0-1.0)",
+        "description": "string",
+        "team": "home|away|unknown",
+        "confidence": "number (0.0-1.0)"
+      },
+      "maxItems": 60
+    }
+  },
+  "constraints": {
+    "max_scenes": 60,
+    "min_scene_duration_sec": 3,
+    "max_scene_duration_sec": 30
+  }
+}

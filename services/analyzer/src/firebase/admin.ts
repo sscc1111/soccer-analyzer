@@ -1,6 +1,8 @@
 import * as admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
+import { getStorage as getFirebaseStorage } from "firebase-admin/storage";
+
+let firestoreInitialized = false;
 
 export function getAdminApp() {
   if (admin.apps.length) return admin.app();
@@ -8,9 +10,22 @@ export function getAdminApp() {
 }
 
 export function getDb() {
-  return getFirestore(getAdminApp());
+  const db = getFirestore(getAdminApp());
+  if (!firestoreInitialized) {
+    db.settings({ ignoreUndefinedProperties: true });
+    firestoreInitialized = true;
+  }
+  return db;
+}
+
+export function getStorage() {
+  return getFirebaseStorage(getAdminApp());
 }
 
 export function getBucket() {
-  return getStorage(getAdminApp()).bucket();
+  const bucketName = process.env.STORAGE_BUCKET;
+  if (!bucketName) {
+    throw new Error("STORAGE_BUCKET environment variable is not set");
+  }
+  return getFirebaseStorage(getAdminApp()).bucket(bucketName);
 }

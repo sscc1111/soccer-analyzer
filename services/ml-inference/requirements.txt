@@ -1,0 +1,33 @@
+# ML Framework
+torch==2.1.2
+torchvision==0.16.2
+
+# Object Detection & Tracking
+ultralytics==8.1.24
+supervision==0.18.0
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Computer Vision
+opencv-python-headless==4.9.0.80
+pillow==10.2.0
+
+# Data Processing
+numpy==1.26.3
+
+# Google Cloud
+google-cloud-storage==2.14.0
+google-cloud-tasks==2.16.1
+google-auth==2.27.0
+
+# Utilities
+python-multipart==0.0.6
+httpx==0.26.0
+tenacity==8.2.3
+
+# Logging & Monitoring
+structlog==24.1.0

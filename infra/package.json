@@ -1,0 +1,18 @@
+{
+  "name": "@soccer/infra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest",
+    "test:rules": "vitest run",
+    "test:watch": "vitest watch"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "@types/node": "^20.10.0",
+    "firebase": "^10.7.1",
+    "typescript": "^5.3.3",
+    "vitest": "^2.1.8"
+  }
+}

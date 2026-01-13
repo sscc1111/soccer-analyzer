@@ -1,0 +1,26 @@
+{
+  "version": "v1",
+  "task": "Analyze tactical aspects of the soccer match including formations, team strategies, and key tactical insights.",
+  "instructions": "この試合動画から、戦術的な分析を行ってください。\n\n## 分析項目\n1. フォーメーション\n   - 各チームの基本フォーメーション (例: 4-3-3, 4-4-2)\n   - 攻撃時/守備時の変形\n\n2. テンポ\n   - パス/分で計測\n   - ビルドアップのスタイル\n\n3. 攻撃パターン\n   - サイド攻撃\n   - 中央突破\n   - カウンター\n   - セットピース活用\n\n4. 守備パターン\n   - プレス強度\n   - ブロック形成\n   - マーキング方式\n\n5. 重要な戦術的洞察",
+  "output_schema": {
+    "formation": {
+      "home": "string (e.g., '4-3-3')",
+      "away": "string"
+    },
+    "tempo": {
+      "home": "number (passes per minute)",
+      "away": "number"
+    },
+    "attackPatterns": ["string"],
+    "defensivePatterns": ["string"],
+    "keyInsights": ["string"],
+    "pressingIntensity": {
+      "home": "number (0-100)",
+      "away": "number (0-100)"
+    },
+    "buildUpStyle": {
+      "home": "short | long | mixed",
+      "away": "short | long | mixed"
+    }
+  }
+}

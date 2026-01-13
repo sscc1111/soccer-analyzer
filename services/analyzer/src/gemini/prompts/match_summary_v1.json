@@ -1,0 +1,38 @@
+{
+  "version": "v1",
+  "task": "Generate a comprehensive match summary including headline, narrative, key moments, and player highlights.",
+  "instructions": "この試合動画から、試合サマリーを生成してください。\n\n## 生成項目\n1. ヘッドライン\n   - 試合を一言で表す印象的な見出し\n\n2. 試合経過\n   - 前半の流れ\n   - 後半の流れ\n   - 全体の総括（オプション）\n\n3. キーモーメント\n   - 試合を左右した重要な瞬間\n   - タイムスタンプと説明\n   - 重要度 (0.0-1.0)\n\n4. 選手ハイライト\n   - 目立った活躍をした選手\n   - 具体的な成果\n\n5. スコア（検出できた場合）",
+  "output_schema": {
+    "headline": "string",
+    "narrative": {
+      "firstHalf": "string",
+      "secondHalf": "string",
+      "overall": "string (optional)"
+    },
+    "keyMoments": [
+      {
+        "timestamp": "number (seconds)",
+        "description": "string",
+        "importance": "number (0.0-1.0)",
+        "type": "goal | chance | save | foul | substitution | tactical_change | other"
+      }
+    ],
+    "playerHighlights": [
+      {
+        "player": "string (jersey number or description)",
+        "jerseyNumber": "number (optional)",
+        "team": "home | away",
+        "achievement": "string"
+      }
+    ],
+    "score": {
+      "home": "number",
+      "away": "number"
+    },
+    "mvp": {
+      "player": "string",
+      "team": "home | away",
+      "achievement": "string"
+    }
+  }
+}

@@ -12,7 +12,8 @@ import {
   TabsTrigger,
   TabsContent,
 } from "../../../components/ui";
-import { useMatch, useStats, useEvents } from "../../../lib/hooks";
+import { AnalysisProgress } from "../../../components/AnalysisProgress";
+import { useMatch, useStats, useEvents, usePendingReviews } from "../../../lib/hooks";
 import type { EventLabel } from "@soccer/shared";
 
 const EVENT_LABELS: EventLabel[] = ["shot", "chance", "setPiece", "dribble", "defense", "other"];
@@ -77,6 +78,7 @@ export default function MatchDashboardScreen() {
   const { match, loading: matchLoading, error: matchError } = useMatch(id);
   const { matchStats, loading: statsLoading } = useStats(id);
   const { events } = useEvents(id);
+  const { needsReviewCount } = usePendingReviews(id);
 
   if (matchLoading) {
     return (
@@ -129,25 +131,12 @@ export default function MatchDashboardScreen() {
           <Badge variant={getStatusVariant(status)}>{status}</Badge>
         </View>
 
-        {/* Status Info */}
-        {status === "running" && (
-          <Card className="mb-4 border-warning">
-            <CardContent className="py-3 flex-row items-center">
-              <ActivityIndicator size="small" color="rgb(234, 179, 8)" />
-              <Text className="text-warning ml-2">Analysis in progress...</Text>
-            </CardContent>
-          </Card>
-        )}
-
-        {status === "error" && (
-          <Card className="mb-4 border-destructive">
-            <CardContent className="py-3">
-              <Text className="text-destructive">
-                Analysis failed. Check settings and try again.
-              </Text>
-            </CardContent>
-          </Card>
-        )}
+        {/* Analysis Progress */}
+        <AnalysisProgress
+          progress={match.analysis?.progress}
+          status={status}
+          errorMessage={match.analysis?.errorMessage}
+        />
 
         {/* Summary Cards */}
         <View className="flex-row gap-3 mb-4">
@@ -160,20 +149,65 @@ export default function MatchDashboardScreen() {
         </View>
 
         {/* Quick Actions */}
-        <View className="flex-row gap-3 mb-6">
-          <Button
-            className="flex-1"
-            onPress={() => router.push(`/match/${id}/clips`)}
-          >
-            View Clips
-          </Button>
+        <View className="gap-3 mb-6">
+          <View className="flex-row gap-3">
+            <Button
+              className="flex-1"
+              onPress={() => router.push(`/match/${id}/clips`)}
+            >
+              View Clips
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onPress={() => router.push(`/match/${id}/stats`)}
+            >
+              View Stats
+            </Button>
+          </View>
+          <View className="flex-row gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onPress={() => router.push(`/match/${id}/tracks`)}
+            >
+              Player Tracks
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onPress={() => router.push(`/match/${id}/tactical`)}
+            >
+              Tactical View
+            </Button>
+          </View>
           <Button
             variant="outline"
-            className="flex-1"
-            onPress={() => router.push(`/match/${id}/stats`)}
+            className="w-full"
+            onPress={() => router.push(`/match/${id}/settings`)}
           >
-            View Stats
+            Settings
           </Button>
+          {needsReviewCount > 0 && (
+            <Card className="border-warning">
+              <CardContent className="py-3 flex-row items-center justify-between">
+                <View>
+                  <Text className="text-foreground font-medium">
+                    Events Need Review
+                  </Text>
+                  <Text className="text-muted-foreground text-sm">
+                    {needsReviewCount} low-confidence events detected
+                  </Text>
+                </View>
+                <Button
+                  variant="outline"
+                  onPress={() => router.push(`/match/${id}/review`)}
+                >
+                  Review
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </View>
 
         {/* Tabs */}

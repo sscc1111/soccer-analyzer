@@ -1,0 +1,52 @@
+{
+  "version": "scene_extraction_v2",
+  "task": "サッカー試合動画を時間軸でセグメント化し、アクティブプレイと停止区間を識別する",
+  "instructions": "この試合動画を分析し、以下の情報を抽出してください。\n\n## セグメントタイプの定義\n\n### 1. active_play（アクティブプレイ）\nボールがインプレイで、選手がプレイしている状態。\n\n**開始条件:**\n- キックオフ、リスタートの笛\n- スローイン、ゴールキックの実行\n- フリーキックの実行\n\n**終了条件:**\n- ファウルの笛\n- ボールがラインを割る\n- ゴール\n- 審判の笛（その他の理由）\n\n### 2. stoppage（停止）\nボールがアウトオブプレイの状態。\n\n**含まれるもの:**\n- ファウル後の待機\n- 負傷者対応\n- 選手交代\n- VAR確認\n- ゴールセレブレーション\n- ハーフタイム、試合終了\n\n### 3. set_piece（セットピース）\n構造化されたリスタート。\n\n**サブタイプ:**\n- corner: コーナーキック\n- free_kick: フリーキック（直接・間接）\n- penalty: ペナルティキック\n- goal_kick: ゴールキック\n- throw_in: スローイン\n- kick_off: キックオフ\n\n### 4. goal_moment（ゴールシーン）\nゴールが決まった瞬間とその前後。\n\n**範囲:**\n- ゴール10秒前から10秒後まで\n- シュートからゴール判定まで\n\n### 5. replay（リプレイ映像）\nスローモーション再生や別アングル映像。\n\n**特徴:**\n- 映像の動きが遅い\n- 同じシーンの繰り返し\n- 画面にリプレイ表示\n\n---\n\n## チームの識別\n\n### ユニフォームの色\n- home: ホームチームのユニフォーム色を特定\n- away: アウェイチームのユニフォーム色を特定\n\n### 攻撃方向\n- 前半: homeが右に攻撃か左に攻撃かを識別\n- 後半: 攻撃方向が入れ替わる\n\n---\n\n## 重要なシーンの抽出\n\n以下のシーンは importance を高く設定:\n- ゴール: 1.0\n- ゴールチャンス（枠内シュート）: 0.9\n- 危険なシュート（枠外）: 0.7\n- ペナルティエリア内のプレイ: 0.6-0.8\n- カウンターアタック: 0.6\n- 好守備（1対1のセーブ、ライン上クリア）: 0.7\n\n---\n\n## 注意事項\n\n- タイムスタンプは秒単位（整数）\n- セグメントは隙間なく連続させる（endSec が次の startSec と一致）\n- リプレイ映像は separate segment としてマーク\n- 不明確な場合は unknown を使用",
+  "output_schema": {
+    "metadata": {
+      "totalDurationSec": "number",
+      "analyzedFromSec": "number",
+      "analyzedToSec": "number",
+      "videoQuality": "good | fair | poor"
+    },
+    "teams": {
+      "home": {
+        "primaryColor": "string (hex color like #FF0000)",
+        "secondaryColor": "string | null",
+        "attackingDirection": "left | right (in first half)"
+      },
+      "away": {
+        "primaryColor": "string (hex color)",
+        "secondaryColor": "string | null",
+        "attackingDirection": "left | right (in first half)"
+      }
+    },
+    "segments": [
+      {
+        "startSec": "number",
+        "endSec": "number",
+        "type": "active_play | stoppage | set_piece | goal_moment | replay",
+        "subtype": "string | null (e.g., corner, free_kick, penalty for set_piece)",
+        "description": "string (brief description of what happens)",
+        "attackingTeam": "home | away | null (which team has possession/attacking)",
+        "importance": "number (0.0-1.0)",
+        "confidence": "number (0.0-1.0)"
+      }
+    ],
+    "highlights": [
+      {
+        "timestamp": "number",
+        "type": "goal | shot | save | chance | turnover | foul | card",
+        "team": "home | away",
+        "description": "string",
+        "importance": "number (0.0-1.0)"
+      }
+    ]
+  },
+  "constraints": {
+    "max_segments": 200,
+    "min_segment_duration_sec": 2,
+    "max_segment_duration_sec": 120,
+    "max_highlights": 60
+  }
+}

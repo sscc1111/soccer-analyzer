@@ -21,8 +21,8 @@ const COST_PER_CLIP = (() => {
 })();
 
 export async function stepLabelClipsGemini({ matchId, version }: { matchId: string; version: string }) {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY not set");
+  if (!process.env.GCP_PROJECT_ID) {
+    throw new Error("GCP_PROJECT_ID not set");
   }
   const db = getDb();
   const matchRef = db.collection("matches").doc(matchId);
@@ -42,13 +42,14 @@ export async function stepLabelClipsGemini({ matchId, version }: { matchId: stri
         t0: clip.t0,
         t1: clip.t1,
         thumbPath: clip.media?.thumbPath,
+        matchId,
       });
 
       batch.set(
         matchRef.collection("clips").doc(clip.clipId),
         {
           gemini: {
-            model: process.env.GEMINI_MODEL ?? "gemini-1.5-flash",
+            model: process.env.GEMINI_MODEL ?? "gemini-3-flash-preview",
             promptVersion: PROMPT_VERSION,
             label: labeled.result.label,
             confidence: labeled.result.confidence,

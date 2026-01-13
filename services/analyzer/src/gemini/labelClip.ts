@@ -3,6 +3,9 @@ import path from "node:path";
 import { PROMPT_VERSION } from "@soccer/shared";
 import { z } from "zod";
 import { downloadToTmp } from "../lib/storage";
+import { withRetry } from "../lib/retry";
+import { callGeminiApi, extractTextFromResponse, type Gemini3Request, type Gemini3Part } from "./gemini3Client";
+import { defaultLogger as logger } from "../lib/logger";
 
 const LabelSchema = z.object({
   label: z.enum(["shot", "chance", "setPiece", "dribble", "defense", "other"]),
@@ -20,16 +23,18 @@ type LabelClipInput = {
   t0: number;
   t1: number;
   thumbPath?: string;
+  matchId?: string;
 };
 
 export async function labelClipWithGemini(clip: LabelClipInput) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY not set");
+  // Validate GCP_PROJECT_ID is set
+  const projectId = process.env.GCP_PROJECT_ID;
+  if (!projectId) throw new Error("GCP_PROJECT_ID not set");
 
-  const model = process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
+  const modelId = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
   const prompt = await loadPrompt();
 
-  const parts: any[] = [
+  const parts: Gemini3Part[] = [
     {
       text: [
         `Task: ${prompt.task}`,
@@ -50,11 +55,12 @@ export async function labelClipWithGemini(clip: LabelClipInput) {
     });
   }
 
-  const response = await callGemini(model, apiKey, parts);
+  const response = await callGeminiWithRetry(projectId, modelId, parts, clip.matchId);
   const parsed = parseLabel(response);
   if (parsed.ok) return { result: parsed.data, rawResponse: response };
 
-  const repair = await callGemini(model, apiKey, [
+  // Repair attempt if JSON parsing failed
+  const repairParts: Gemini3Part[] = [
     {
       text: [
         "Fix the following to valid JSON with the required schema.",
@@ -63,7 +69,8 @@ export async function labelClipWithGemini(clip: LabelClipInput) {
         response,
       ].join("\n"),
     },
-  ]);
+  ];
+  const repair = await callGeminiWithRetry(projectId, modelId, repairParts, clip.matchId);
   const repaired = parseLabel(repair);
   if (!repaired.ok) throw new Error("Gemini response invalid JSON");
   return { result: repaired.data, rawResponse: repair, rawOriginalResponse: response };
@@ -79,24 +86,41 @@ async function loadPrompt() {
 
 let cachedPrompt: { task: string; output_schema: Record<string, unknown> } | null = null;
 
-async function callGemini(model: string, apiKey: string, parts: any[]) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts }],
-      generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${text}`);
-  }
-  const body = (await res.json()) as any;
-  const text = body?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Gemini response empty");
-  return text;
+/**
+ * Call Gemini API with retry logic using REST API (supports global endpoint)
+ */
+async function callGeminiWithRetry(projectId: string, modelId: string, parts: Gemini3Part[], matchId?: string): Promise<string> {
+  return withRetry(
+    async () => {
+      const request: Gemini3Request = {
+        contents: [{ role: "user", parts }],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+        },
+      };
+
+      const costContext = matchId ? { matchId, step: "label_clips" } : undefined;
+      const response = await callGeminiApi(projectId, modelId, request, costContext);
+      const text = extractTextFromResponse(response);
+      if (!text) throw new Error("Gemini response empty");
+      return text;
+    },
+    {
+      maxRetries: 3,
+      initialDelayMs: 2000,
+      maxDelayMs: 30000,
+      timeoutMs: 120000, // 2 minutes timeout
+      onRetry: (attempt, error, delayMs) => {
+        logger.warn("Retrying clip labeling", {
+          model: modelId,
+          attempt,
+          delayMs,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      },
+    }
+  );
 }
 
 function parseLabel(text: string): { ok: true; data: LabelResult } | { ok: false; error: string } {

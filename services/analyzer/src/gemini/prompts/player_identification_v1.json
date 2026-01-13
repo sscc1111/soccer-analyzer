@@ -1,0 +1,33 @@
+{
+  "version": "v1",
+  "task": "Identify players, teams, and roles from the soccer match video including jersey numbers, team colors, and player positions.",
+  "instructions": "この試合動画から、選手情報を識別してください。\n\n## 識別対象\n1. チーム分類\n   - home: ホームチーム（ユニフォームの色を記録）\n   - away: アウェイチーム\n\n2. 役割識別\n   - player: フィールドプレイヤー\n   - goalkeeper: ゴールキーパー（異なるユニフォーム色）\n   - referee: 審判（通常黒/黄色）\n\n3. 背番号OCR\n   - 可能な限り背番号を読み取り\n   - 読み取れない場合は null\n\n## 注意事項\n- ユニフォームの色は hex カラーコード (#RRGGBB)\n- confidence は 0.0〜1.0 の範囲\n- 同じ選手が複数回検出される場合は、最も信頼度の高いものを採用",
+  "output_schema": {
+    "teams": {
+      "home": {
+        "primaryColor": "string (hex color)",
+        "secondaryColor": "string (hex color, optional)",
+        "goalkeeperColor": "string (hex color)"
+      },
+      "away": {
+        "primaryColor": "string (hex color)",
+        "secondaryColor": "string (hex color, optional)",
+        "goalkeeperColor": "string (hex color)"
+      }
+    },
+    "players": [
+      {
+        "team": "home | away",
+        "jerseyNumber": "number | null",
+        "role": "player | goalkeeper",
+        "confidence": "number (0.0-1.0)"
+      }
+    ],
+    "referees": [
+      {
+        "role": "main_referee | linesman | fourth_official",
+        "uniformColor": "string (hex color)"
+      }
+    ]
+  }
+}

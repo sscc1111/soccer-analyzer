@@ -1,0 +1,34 @@
+{
+  "version": "v1",
+  "task": "Segment a soccer match video into meaningful time windows based on game state and content type.",
+  "instructions": "この試合動画を分析し、以下のカテゴリに基づいて時系列にセグメント分割してください。\n\n## セグメントタイプ\n\n1. **active_play**: ボールがインプレーで、選手が活発に動いている状態\n   - 攻守の切り替え、ドリブル、パス交換など\n   - importance: 1-5 (戦術的重要度)\n\n2. **stoppage**: デッドボール状態\n   - ファウル、負傷、選手交代、審判の介入\n   - description で具体的な理由を記載\n\n3. **set_piece**: 構造的な再開プレー\n   - subtype: corner | free_kick | penalty | goal_kick | throw_in | kick_off\n   - attackingTeam: どちらのチームが攻撃側か\n\n4. **goal_moment**: ゴールシーン（前後10秒含む）\n   - ゴール前10秒〜ゴール後10秒の重要な瞬間\n   - attackingTeam: 得点したチーム\n\n5. **replay**: スローモーション再生やリプレイ映像\n   - 実際のプレーではなく、過去プレーの再生\n\n## 出力要件\n\n### メタデータ\n- totalDurationSec: 動画全体の長さ（秒）\n- videoQuality: good | fair | poor\n- qualityNotes: 画質に関する補足情報\n\n### チーム情報\n- home/away の各チームについて:\n  - colors: ユニフォームの色（例: \"red/white\"）\n  - attackingDirection: first_half で攻める方向 \"left_to_right\" | \"right_to_left\"\n\n### セグメント配列\n各セグメントには以下を含める:\n- startSec: 開始時刻（秒、小数点以下1桁）\n- endSec: 終了時刻（秒、小数点以下1桁）\n- type: セグメントタイプ\n- subtype: サブタイプ（該当する場合）\n- description: 何が起きているかの簡潔な説明（日本語）\n- attackingTeam: 攻撃側チーム（該当する場合）\n- importance: 1-5（active_playの場合必須）\n- confidence: 0.0-1.0\n\n## 注意事項\n- セグメントは時系列順に並べる\n- セグメントは重複しないようにする（隙間があってもよい）\n- 不明確な部分は confidence を下げて記録\n- goal_moment は前後の文脈を含めて正確に\n- replay は実プレーと明確に区別する",
+  "output_schema": {
+    "metadata": {
+      "totalDurationSec": "number",
+      "videoQuality": "good | fair | poor",
+      "qualityNotes": "string (optional)"
+    },
+    "teams": {
+      "home": {
+        "colors": "string (e.g., 'red/white')",
+        "attackingDirection": "left_to_right | right_to_left"
+      },
+      "away": {
+        "colors": "string (e.g., 'blue/black')",
+        "attackingDirection": "left_to_right | right_to_left"
+      }
+    },
+    "segments": [
+      {
+        "startSec": "number",
+        "endSec": "number",
+        "type": "active_play | stoppage | set_piece | goal_moment | replay",
+        "subtype": "string (optional: corner | free_kick | penalty | goal_kick | throw_in | kick_off)",
+        "description": "string (brief Japanese description)",
+        "attackingTeam": "home | away (optional)",
+        "importance": "number 1-5 (for active_play)",
+        "confidence": "number 0.0-1.0"
+      }
+    ]
+  }
+}

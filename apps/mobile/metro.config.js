@@ -14,4 +14,36 @@ config.resolver.nodeModulesPaths = [
 ];
 config.resolver.disableHierarchicalLookup = true;
 
+// Redirect burnt to mock for Expo Go compatibility
+// burnt requires native modules not available in Expo Go
+const burntMockPath = path.resolve(projectRoot, "lib/burnt-mock.js");
+const originalResolveRequest = config.resolver.resolveRequest;
+
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Intercept burnt module and redirect to mock
+  if (moduleName === "burnt") {
+    return {
+      filePath: burntMockPath,
+      type: "sourceFile",
+    };
+  }
+
+  // Use React Native specific Firebase Auth build for persistence support
+  if (moduleName === "@firebase/auth" || moduleName === "firebase/auth") {
+    const firebaseAuthRNPath = require.resolve(
+      "@firebase/auth/dist/rn/index.js"
+    );
+    return {
+      filePath: firebaseAuthRNPath,
+      type: "sourceFile",
+    };
+  }
+
+  // Fall back to default resolver
+  if (originalResolveRequest) {
+    return originalResolveRequest(context, moduleName, platform);
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
+
 module.exports = withNativeWind(config, { input: "./global.css" });

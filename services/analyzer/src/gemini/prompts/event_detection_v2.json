@@ -1,0 +1,33 @@
+{
+  "version": "v2",
+  "task": "Detect tactical events from a soccer match video with high precision using visual indicators and confidence calibration.",
+  "instructions": "この試合動画から、以下のイベントを検出してください。\n\n## 検出対象と視覚的指標\n\n### 1. パス (pass)\nボールが選手間で意図的に移動するプレイ。\n\n**視覚的指標:**\n- 選手の足がボールを蹴る動作が見える\n- ボールが空中または地面を移動する\n- 別の選手（味方または相手）がボールに接触する\n\n**パスタイプの定義:**\n- short: 10m未満（近くの味方へ）\n- medium: 10-25m（中距離パス）\n- long: 25m以上（ロングボール）\n- through: 守備ラインの裏へ通すパス\n- cross: サイドからペナルティエリアへのクロス\n\n**結果の判定:**\n- complete: 味方選手がボールを受け取った\n- incomplete: ボールがラインを割った、または誰も触れなかった\n- intercepted: 相手選手がボールを奪取した\n\n**パスではないもの（検出しない）:**\n- クリアランス（危険回避のための蹴り出し）\n- ゴールキック\n- スローイン\n\n### 2. キャリー (carry)\n選手がボールを保持しながら移動するプレイ。\n\n**視覚的指標:**\n- 選手がボールを足元に置いて移動している\n- ボールが選手から約2m以内を維持\n- 複数回のタッチまたは連続的な接触が見える\n\n**検出条件:**\n- 最小時間: 1秒以上\n- 最小距離: 5m以上（推定）\n\n**終了条件:**\n- パスを出した\n- シュートを打った\n- ボールを失った（ターンオーバー）\n- 停止した\n\n### 3. ターンオーバー (turnover)\nチーム間でボール所持が変わる瞬間。\n\n**視覚的指標:**\n- tackle: 守備選手の足がボールに接触し、ボールの方向が変わる\n- interception: パスが相手選手に渡る（パス失敗とは別）\n- bad_touch: コントロールミスでボールが相手に渡る\n- out_of_bounds: ボールがラインを割り、相手チームのボールになる\n\n### 4. シュート (shot)\nゴールを狙った攻撃的なプレイ。\n\n**視覚的指標:**\n- ゴール方向への強いボール移動\n- 選手の体がゴールに向いている\n- ゴールキーパーが反応している\n\n**結果の判定:**\n- goal: ボールがゴールラインを完全に越えた\n- saved: ゴールキーパーが触れて止めた\n- blocked: フィールドプレイヤーがブロックした\n- missed: ゴール枠を外れた（ワイド、バー上）\n\n### 5. セットピース (setPiece)\n試合の再開プレイ。\n\n**タイプ:**\n- corner: コーナーキック\n- free_kick: フリーキック\n- penalty: ペナルティキック\n- throw_in: スローイン\n\n---\n\n## 信頼度ガイドライン\n\n信頼度は以下の基準で設定してください：\n\n| 信頼度 | 条件 |\n|--------|------|\n| 0.9-1.0 | 蹴り手、ボール軌道、受け手がすべて明確に見える |\n| 0.7-0.9 | 一部遮蔽があるが、ボール軌道は明確 |\n| 0.5-0.7 | 選手位置とボール出現位置から推測できる |\n| 0.5未満 | **報告しない**（不確実なイベントは除外） |\n\n---\n\n## フィールドゾーン\n\nフィールドを3分割して位置を記録：\n- defensive_third: 自陣ゴール側1/3\n- middle_third: 中央1/3\n- attacking_third: 相手ゴール側1/3\n\n---\n\n## 時間的制約\n\n- 同じ選手の連続パス: 最低1秒以上の間隔\n- キャリーの最小時間: 1秒以上\n- 連続イベントの最小間隔: 0.5秒\n\n---\n\n## 検出対象外\n\n以下は検出しないでください：\n- リプレイ映像（スローモーション再生）\n- ハーフタイム、試合終了後の映像\n- ウォームアップ、練習シーン\n- ゴールキック待ち、スローイン待ちの停止区間\n\n---\n\n## 注意事項\n\n- タイムスタンプは秒単位（小数点以下1桁）\n- team は home（ホーム）または away（アウェイ）で識別\n- player は背番号（#10など）または位置（left midfielder など）で識別\n- 各イベントには必ず visualEvidence を記載（何を見て判断したか）",
+  "output_schema": {
+    "metadata": {
+      "videoQuality": "good | fair | poor",
+      "qualityIssues": ["occlusion", "camera_shake", "low_resolution", "replay", "none"],
+      "analyzedDurationSec": "number"
+    },
+    "events": [
+      {
+        "timestamp": "number (seconds, 1 decimal place)",
+        "type": "pass | carry | turnover | shot | setPiece",
+        "team": "home | away",
+        "player": "string (jersey number like #10 or position description)",
+        "zone": "defensive_third | middle_third | attacking_third",
+        "details": {
+          "passType": "short | medium | long | through | cross (for pass)",
+          "outcome": "complete | incomplete | intercepted (for pass)",
+          "targetPlayer": "string (for pass)",
+          "distance": "number (estimated meters, for carry)",
+          "endReason": "pass | shot | dispossessed | stopped (for carry)",
+          "turnoverType": "tackle | interception | bad_touch | out_of_bounds | other (for turnover)",
+          "shotResult": "goal | saved | blocked | missed (for shot)",
+          "setPieceType": "corner | free_kick | penalty | throw_in (for setPiece)"
+        },
+        "confidence": "number (0.5-1.0, do not report below 0.5)",
+        "visualEvidence": "string (brief description of what you observed to detect this event)"
+      }
+    ]
+  }
+}

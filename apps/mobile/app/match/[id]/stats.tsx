@@ -41,9 +41,79 @@ const MATCH_METRICS: MetricDisplay[] = [
       return `${v.length} highlights`;
     },
   },
+  // Team Possession (Phase 3.3)
+  {
+    key: metricKeys.teamPossessionPercent,
+    label: "Possession",
+    format: (v) => {
+      if (!v || typeof v !== "object") return "N/A";
+      const poss = v as { home?: number; away?: number };
+      return `Home ${poss.home ?? 0}% - Away ${poss.away ?? 0}%`;
+    },
+  },
 ];
 
 const PLAYER_METRICS: MetricDisplay[] = [
+  // Passes (Phase 3.1)
+  {
+    key: metricKeys.playerPassesAttempted,
+    label: "Passes Attempted",
+    format: (v) => String(v ?? 0),
+  },
+  {
+    key: metricKeys.playerPassesCompleted,
+    label: "Passes Completed",
+    format: (v) => String(v ?? 0),
+  },
+  {
+    key: metricKeys.playerPassesSuccessRate,
+    label: "Pass Success Rate",
+    format: (v) => (typeof v === "number" ? `${v}%` : "N/A"),
+  },
+  // Carry (Phase 3.2)
+  {
+    key: metricKeys.playerCarryCount,
+    label: "Carries",
+    format: (v) => String(v ?? 0),
+  },
+  {
+    key: metricKeys.playerCarryIndex,
+    label: "Carry Index",
+    format: (v) => (typeof v === "number" ? v.toFixed(1) : "N/A"),
+  },
+  {
+    key: metricKeys.playerCarryProgressIndex,
+    label: "Carry Progress",
+    format: (v) => (typeof v === "number" ? v.toFixed(1) : "N/A"),
+  },
+  // Possession (Phase 3.3)
+  {
+    key: metricKeys.playerPossessionTimeSec,
+    label: "Possession Time",
+    format: (v) => {
+      if (typeof v !== "number") return "N/A";
+      const mins = Math.floor(v / 60);
+      const secs = Math.floor(v % 60);
+      return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    },
+  },
+  {
+    key: metricKeys.playerPossessionCount,
+    label: "Possessions",
+    format: (v) => String(v ?? 0),
+  },
+  // Turnovers (Phase 3.4)
+  {
+    key: metricKeys.playerTurnoversLost,
+    label: "Turnovers Lost",
+    format: (v) => String(v ?? 0),
+  },
+  {
+    key: metricKeys.playerTurnoversWon,
+    label: "Turnovers Won",
+    format: (v) => String(v ?? 0),
+  },
+  // Existing metrics
   {
     key: metricKeys.playerInvolvementCount,
     label: "Involvement",

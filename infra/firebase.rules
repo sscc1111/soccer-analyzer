@@ -1,14 +1,49 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper function to check if user owns the match (by ownerUid or deviceId)
+    function isMatchOwnerByUid(matchId) {
+      return get(/databases/$(database)/documents/matches/$(matchId)).data.ownerUid == request.auth.uid;
+    }
+
     match /matches/{matchId} {
-      allow read, write: if request.auth != null; // TODO tighten
+      // Read: authenticated user can read if ownerUid matches OR deviceId exists
+      allow read: if request.auth != null && (
+        resource.data.ownerUid == request.auth.uid ||
+        resource.data.deviceId != null
+      );
+
+      // Create: authenticated user can create with ownerUid or deviceId
+      allow create: if request.auth != null && (
+        request.resource.data.ownerUid == request.auth.uid ||
+        request.resource.data.deviceId != null
+      );
+
+      // Update/Delete: owner can modify (by ownerUid or deviceId)
+      allow update, delete: if request.auth != null && (
+        resource.data.ownerUid == request.auth.uid ||
+        resource.data.deviceId != null
+      );
     }
+
     match /matches/{matchId}/{sub=**} {
-      allow read, write: if request.auth != null; // TODO tighten
+      // Subcollections (clips, events, stats, etc.) - authenticated users can access
+      allow read, write: if request.auth != null;
     }
+
     match /jobs/{jobId} {
-      allow read, write: if request.auth != null; // TODO tighten
+      // Jobs are system-managed
+      // Users can read jobs (to check status), but only Cloud Functions can write
+      allow read: if request.auth != null;
+      allow write: if false; // Only admin SDK (Cloud Functions) can write
+    }
+
+    // Future: user settings collection
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /users/{userId}/{sub=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }

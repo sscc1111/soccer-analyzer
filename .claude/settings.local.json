@@ -2,7 +2,21 @@
   "permissions": {
     "allow": [
       "Bash(pnpm typecheck:*)",
-      "Bash(pnpm tsc:*)"
+      "Bash(pnpm tsc:*)",
+      "Bash(pnpm --filter mobile typecheck:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm exec tsc:*)",
+      "Bash(cat:*)",
+      "Bash(tree:*)",
+      "Bash(docker build:*)",
+      "Bash(pnpm --filter @soccer/mobile typecheck:*)",
+      "Bash(chmod:*)",
+      "Bash(infra/verify-deployment-config.sh:*)",
+      "Bash(./infra/verify-deployment-config.sh:*)",
+      "Bash(pnpm:*)",
+      "Bash(gcloud builds submit:*)",
+      "Bash(gcloud run deploy:*)"
     ],
     "deny": [],
     "ask": []

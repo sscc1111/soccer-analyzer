@@ -6,11 +6,18 @@
     "apps/*",
     "services/*",
     "functions",
-    "packages/*"
+    "packages/*",
+    "infra"
   ],
   "scripts": {
     "dev:mobile": "pnpm --filter @soccer/mobile dev",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test:rules": "pnpm --filter @soccer/infra test:rules",
+    "test:rules:watch": "pnpm --filter @soccer/infra test:watch"
+  },
+  "devDependencies": {
+    "google-auth-library": "^10.5.0",
+    "ts-node": "^10.9.2"
   }
 }

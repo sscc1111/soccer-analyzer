@@ -1,0 +1,47 @@
+# CPU-only Dockerfile for ML inference service
+FROM python:3.10-slim-bookworm
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies for OpenCV
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    curl && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements-cpu.txt .
+
+# Install Python dependencies (CPU-only torch 2.1.2 for ultralytics compatibility)
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements-cpu.txt
+
+# Copy source code
+COPY src/ ./src/
+
+# Copy YOLO model weights
+COPY yolov8n.pt .
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8080
+ENV PYTHONPATH=/app/src
+
+# Expose port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# Run the FastAPI application with uvicorn
+CMD ["python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]

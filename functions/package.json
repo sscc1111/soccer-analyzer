@@ -10,8 +10,7 @@
   },
   "dependencies": {
     "firebase-admin": "^12.5.0",
-    "firebase-functions": "^5.1.1",
-    "@soccer/shared": "workspace:*"
+    "firebase-functions": "^5.1.1"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

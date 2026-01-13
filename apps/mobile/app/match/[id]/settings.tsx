@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -25,7 +25,18 @@ import {
 } from "../../../components/ui";
 import { toast } from "../../../components/ui/toast";
 import { useMatch, updateMatch, useDefaultSettings } from "../../../lib/hooks";
-import type { MatchSettings } from "@soccer/shared";
+import type { MatchSettings, GameFormat, ProcessingMode } from "@soccer/shared";
+import {
+  validateMatchSettings,
+  findDuplicateJerseyNumbers,
+  DEFAULT_FIELD_SIZES,
+  DEFAULT_MATCH_DURATIONS,
+  PROCESSING_MODE_INFO,
+  FORMATIONS_BY_FORMAT,
+  GAME_FORMAT_INFO,
+  estimateProcessingTime,
+  formatEstimatedTime,
+} from "@soccer/shared";
 
 const ATTACK_DIRECTIONS = [
   { value: "LTR", label: "Left to Right" },
@@ -39,14 +50,16 @@ const CAMERA_POSITIONS = [
   { value: "other", label: "Other" },
 ] as const;
 
-const FORMATIONS = [
-  "4-4-2",
-  "4-3-3",
-  "3-5-2",
-  "4-2-3-1",
-  "5-3-2",
-  "3-4-3",
+const ZOOM_HINTS = [
+  { value: "near", label: "Near (Close-up)" },
+  { value: "mid", label: "Mid (Half field)" },
+  { value: "far", label: "Far (Full field)" },
 ] as const;
+
+/** All game formats for selection */
+const GAME_FORMATS = Object.keys(GAME_FORMAT_INFO) as GameFormat[];
+
+const PROCESSING_MODES: ProcessingMode[] = ["quick", "standard", "detailed"];
 
 function ColorPicker({
   label,
@@ -192,6 +205,23 @@ export default function SettingsScreen() {
   const [relabelOnChange, setRelabelOnChange] = useState(false);
   const [usingDefaults, setUsingDefaults] = useState(false);
 
+  // Get available formations based on selected game format
+  const currentGameFormat = settings.gameFormat ?? defaultSettings.gameFormat ?? "eleven";
+  const availableFormations = useMemo(
+    () => FORMATIONS_BY_FORMAT[currentGameFormat],
+    [currentGameFormat]
+  );
+
+  // Reset formation if it's no longer valid for the selected game format
+  useEffect(() => {
+    if (settings.formation?.shape && !availableFormations.includes(settings.formation.shape)) {
+      setSettings((s) => ({
+        ...s,
+        formation: { ...s.formation, shape: availableFormations[0] },
+      }));
+    }
+  }, [currentGameFormat, availableFormations]);
+
   // Load settings: match settings take priority, fallback to defaults
   useEffect(() => {
     if (loading || defaultsLoading) return;
@@ -217,7 +247,14 @@ export default function SettingsScreen() {
       setUsingDefaults(true);
       setSettings({
         teamColors: defaultSettings.teamColors,
-        formation: defaultSettings.formation,
+        formation: {
+          ...defaultSettings.formation,
+          assignments: defaultSettings.roster?.map((r) => ({
+            jerseyNo: r.jerseyNo,
+            role: r.name,
+          })),
+        },
+        processingMode: "standard", // Default processing mode
       });
       setRoster(defaultSettings.roster ?? []);
     }
@@ -235,20 +272,43 @@ export default function SettingsScreen() {
   const saveSettings = async () => {
     if (!id) return;
 
+    // Check for duplicate jersey numbers
+    const duplicates = findDuplicateJerseyNumbers(roster);
+    if (duplicates.length > 0) {
+      toast({
+        title: "Duplicate jersey numbers",
+        message: `Jersey numbers ${duplicates.join(", ")} are used more than once`,
+        variant: "warning",
+      });
+      return;
+    }
+
+    const updatedSettings: MatchSettings = {
+      ...settings,
+      relabelOnChange,
+      formation: {
+        ...settings.formation,
+        assignments: roster.map((r) => ({
+          jerseyNo: r.jerseyNo,
+          role: r.name,
+        })),
+      },
+    };
+
+    // Validate settings before saving
+    const validationResult = validateMatchSettings(updatedSettings);
+    if (!validationResult.success) {
+      const firstError = validationResult.error.issues[0];
+      toast({
+        title: "Invalid settings",
+        message: firstError.message,
+        variant: "error",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
-      const updatedSettings: MatchSettings = {
-        ...settings,
-        relabelOnChange,
-        formation: {
-          ...settings.formation,
-          assignments: roster.map((r) => ({
-            jerseyNo: r.jerseyNo,
-            role: r.name,
-          })),
-        },
-      };
-
       await updateMatch(id, { settings: updatedSettings });
       toast({ title: "Settings saved", variant: "success" });
       setConfirmDialogOpen(false);
@@ -289,6 +349,139 @@ export default function SettingsScreen() {
             </Text>
           </View>
         )}
+
+        {/* Game Format */}
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>試合形式</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Text className="text-foreground mb-2">Number of players per team</Text>
+            <View className="flex-row flex-wrap gap-2 mb-4">
+              {GAME_FORMATS.map((format) => {
+                const formatInfo = GAME_FORMAT_INFO[format];
+                return (
+                  <Pressable
+                    key={format}
+                    onPress={() => {
+                      const defaults = DEFAULT_MATCH_DURATIONS[format];
+                      const fieldDefaults = DEFAULT_FIELD_SIZES[format];
+                      setSettings((s) => ({
+                        ...s,
+                        gameFormat: format,
+                        matchDuration: defaults,
+                        fieldSize: fieldDefaults,
+                      }));
+                    }}
+                    className={`px-4 py-3 rounded-lg flex-1 min-w-[100px] ${
+                      settings.gameFormat === format ? "bg-primary" : "bg-muted"
+                    }`}
+                  >
+                    <Text
+                      className={`font-medium text-center ${
+                        settings.gameFormat === format
+                          ? "text-primary-foreground"
+                          : "text-foreground"
+                      }`}
+                    >
+                      {formatInfo.labelJa}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* Match Duration */}
+            <Text className="text-foreground mb-2 mt-4">Match Duration</Text>
+            <View className="flex-row gap-4 mb-4">
+              <View className="flex-1">
+                <Text className="text-muted-foreground text-sm mb-1">Half duration (min)</Text>
+                <TextInput
+                  className="bg-muted border border-border rounded-md px-3 py-2 text-foreground"
+                  value={String(settings.matchDuration?.halfDuration ?? "")}
+                  onChangeText={(text) =>
+                    setSettings((s) => ({
+                      ...s,
+                      matchDuration: {
+                        ...s.matchDuration,
+                        halfDuration: parseInt(text) || 0,
+                        numberOfHalves: s.matchDuration?.numberOfHalves ?? 2,
+                      },
+                    }))
+                  }
+                  keyboardType="number-pad"
+                  placeholder="45"
+                  placeholderTextColor="rgb(170, 170, 170)"
+                />
+              </View>
+              <View className="flex-1">
+                <Text className="text-muted-foreground text-sm mb-1">Number of halves</Text>
+                <TextInput
+                  className="bg-muted border border-border rounded-md px-3 py-2 text-foreground"
+                  value={String(settings.matchDuration?.numberOfHalves ?? "")}
+                  onChangeText={(text) =>
+                    setSettings((s) => ({
+                      ...s,
+                      matchDuration: {
+                        ...s.matchDuration,
+                        halfDuration: s.matchDuration?.halfDuration ?? 45,
+                        numberOfHalves: parseInt(text) || 2,
+                      },
+                    }))
+                  }
+                  keyboardType="number-pad"
+                  placeholder="2"
+                  placeholderTextColor="rgb(170, 170, 170)"
+                />
+              </View>
+            </View>
+
+            {/* Field Size */}
+            <Text className="text-foreground mb-2 mt-4">Field Size (meters)</Text>
+            <View className="flex-row gap-4">
+              <View className="flex-1">
+                <Text className="text-muted-foreground text-sm mb-1">Length</Text>
+                <TextInput
+                  className="bg-muted border border-border rounded-md px-3 py-2 text-foreground"
+                  value={String(settings.fieldSize?.length ?? "")}
+                  onChangeText={(text) =>
+                    setSettings((s) => ({
+                      ...s,
+                      fieldSize: {
+                        ...s.fieldSize,
+                        length: parseInt(text) || 0,
+                        width: s.fieldSize?.width ?? 68,
+                      },
+                    }))
+                  }
+                  keyboardType="number-pad"
+                  placeholder="105"
+                  placeholderTextColor="rgb(170, 170, 170)"
+                />
+              </View>
+              <View className="flex-1">
+                <Text className="text-muted-foreground text-sm mb-1">Width</Text>
+                <TextInput
+                  className="bg-muted border border-border rounded-md px-3 py-2 text-foreground"
+                  value={String(settings.fieldSize?.width ?? "")}
+                  onChangeText={(text) =>
+                    setSettings((s) => ({
+                      ...s,
+                      fieldSize: {
+                        ...s.fieldSize,
+                        length: s.fieldSize?.length ?? 105,
+                        width: parseInt(text) || 0,
+                      },
+                    }))
+                  }
+                  keyboardType="number-pad"
+                  placeholder="68"
+                  placeholderTextColor="rgb(170, 170, 170)"
+                />
+              </View>
+            </View>
+          </CardContent>
+        </Card>
 
         {/* Attack Direction */}
         <Card className="mb-4">
@@ -353,6 +546,17 @@ export default function SettingsScreen() {
                 }))
               }
             />
+            <OptionSelector
+              label="Zoom Level (how much of the field is visible?)"
+              options={ZOOM_HINTS}
+              value={(settings.camera?.zoomHint as "near" | "mid" | "far") ?? null}
+              onChange={(v) =>
+                setSettings((s) => ({
+                  ...s,
+                  camera: { ...s.camera, zoomHint: v },
+                }))
+              }
+            />
           </CardContent>
         </Card>
 
@@ -362,9 +566,11 @@ export default function SettingsScreen() {
             <CardTitle>Formation</CardTitle>
           </CardHeader>
           <CardContent>
-            <Text className="text-foreground mb-2">Team Formation</Text>
+            <Text className="text-muted-foreground mb-3">
+              Available formations for {GAME_FORMAT_INFO[currentGameFormat].labelJa}
+            </Text>
             <View className="flex-row flex-wrap gap-2 mb-4">
-              {FORMATIONS.map((f) => (
+              {availableFormations.map((f) => (
                 <Pressable
                   key={f}
                   onPress={() =>
@@ -402,6 +608,80 @@ export default function SettingsScreen() {
               Add jersey numbers to enable player tracking.
             </Text>
             <RosterEditor roster={roster} onChange={setRoster} />
+          </CardContent>
+        </Card>
+
+        {/* Processing Mode */}
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Processing Mode</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Text className="text-muted-foreground mb-3">
+              Choose between speed and accuracy for analysis.
+            </Text>
+            <View className="gap-3">
+              {PROCESSING_MODES.map((mode) => {
+                const modeInfo = PROCESSING_MODE_INFO[mode];
+                const videoDuration = match?.video?.durationSec ?? 0;
+                const estimatedMinutes = videoDuration > 0
+                  ? estimateProcessingTime(videoDuration, mode)
+                  : null;
+
+                return (
+                  <Pressable
+                    key={mode}
+                    onPress={() =>
+                      setSettings((s) => ({ ...s, processingMode: mode }))
+                    }
+                    className={`p-4 rounded-lg border ${
+                      settings.processingMode === mode
+                        ? "bg-primary/10 border-primary"
+                        : "bg-muted border-transparent"
+                    }`}
+                  >
+                    <View className="flex-row items-center justify-between mb-2">
+                      <Text
+                        className={`text-lg font-semibold ${
+                          settings.processingMode === mode
+                            ? "text-primary"
+                            : "text-foreground"
+                        }`}
+                      >
+                        {modeInfo.label}
+                      </Text>
+                      {settings.processingMode === mode && (
+                        <Badge variant="default">Selected</Badge>
+                      )}
+                    </View>
+
+                    <Text className="text-muted-foreground text-sm mb-1">
+                      {modeInfo.description}
+                    </Text>
+
+                    <View className="flex-row items-center gap-3 mt-2">
+                      <View className="bg-background/50 px-2 py-1 rounded">
+                        <Text className="text-xs text-muted-foreground">
+                          {modeInfo.fps} FPS
+                        </Text>
+                      </View>
+                      <View className="bg-background/50 px-2 py-1 rounded">
+                        <Text className="text-xs text-muted-foreground">
+                          {modeInfo.accuracy}
+                        </Text>
+                      </View>
+                      {estimatedMinutes !== null && (
+                        <View className="bg-background/50 px-2 py-1 rounded">
+                          <Text className="text-xs text-muted-foreground">
+                            {formatEstimatedTime(estimatedMinutes)}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
           </CardContent>
         </Card>
 

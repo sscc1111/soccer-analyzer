@@ -1,0 +1,25 @@
+{
+  "version": "v1",
+  "task": "Detect tactical events from a soccer match video including passes, carries, turnovers, shots, and set pieces.",
+  "instructions": "この試合動画から、以下のイベントを検出してください。\n\n## 検出対象\n1. パス: ボールが選手間で移動\n   - passType: short | medium | long | through | cross\n   - outcome: complete | incomplete | intercepted\n\n2. キャリー: 選手がボールを持って移動\n   - distance: 移動距離（推定メートル）\n\n3. ターンオーバー: チーム間でボール所持が変わる\n   - type: tackle | interception | bad_touch | out_of_bounds | other\n\n4. シュート: ゴールへの攻撃\n   - result: goal | saved | blocked | missed\n\n5. セットピース\n   - type: corner | free_kick | penalty | throw_in\n\n## 注意事項\n- タイムスタンプは秒単位（小数点以下1桁）\n- team は home または away で識別\n- player は背番号 (#10 など) または位置で識別\n- confidence は 0.0〜1.0 の範囲",
+  "output_schema": {
+    "events": [
+      {
+        "timestamp": "number (seconds)",
+        "type": "pass | carry | turnover | shot | setPiece",
+        "team": "home | away",
+        "player": "string (jersey number or description)",
+        "details": {
+          "passType": "short | medium | long | through | cross (for pass)",
+          "outcome": "complete | incomplete | intercepted (for pass)",
+          "targetPlayer": "string (for pass)",
+          "distance": "number (meters, for carry)",
+          "turnoverType": "tackle | interception | bad_touch | out_of_bounds | other (for turnover)",
+          "shotResult": "goal | saved | blocked | missed (for shot)",
+          "setPieceType": "corner | free_kick | penalty | throw_in (for setPiece)"
+        },
+        "confidence": "number (0.0-1.0)"
+      }
+    ]
+  }
+}

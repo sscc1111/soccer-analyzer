@@ -1,6 +1,8 @@
-import * as admin from "firebase-admin";
+import { initializeApp, getApps, App } from "firebase-admin/app";
 
-export function getAdminApp() {
-  if (admin.apps.length) return admin.app();
-  return admin.initializeApp();
+// Initialize Firebase Admin at module load time
+const adminApp: App = getApps().length === 0 ? initializeApp() : getApps()[0];
+
+export function getAdminApp(): App {
+  return adminApp;
 }

@@ -1,0 +1,35 @@
+{
+  "version": "v3",
+  "task": "Segment a soccer match video into meaningful time windows based on game state and content type with improved visual indicators.",
+  "instructions": "この試合動画を分析し、以下のカテゴリに基づいて時系列にセグメント分割してください。\n\n## セグメントタイプと視覚的指標\n\n### 1. active_play\nボールがインプレーで、選手が活発に動いている状態。\n\n**視覚的指標:**\n- ボールが選手の足元または空中にあり、プレーが継続している\n- 選手がボールに向かって移動している\n- 攻守の切り替え、ドリブル、パス交換が見られる\n\n**重要度スコア (importance 1-5):**\n- 5: ゴール前のチャンス、カウンターアタック、シュートシーン\n- 4: 崩しの場面、ペナルティエリア侵入\n- 3: 中盤での攻防、ビルドアップ\n- 2: ボール保持、ポゼッション維持\n- 1: 単純なボール回し、時間稼ぎ\n\n**重要: シュートシーンを見逃さない**\n- ペナルティエリア付近での強いキック動作があれば importance 5 に設定\n- ゴールキーパーが反応している場面は importance 5 に設定\n- ゴール方向へのボール移動が見られる場面は importance 4-5 に設定\n\n### 2. stoppage\nデッドボール状態。プレーが中断している。\n\n**視覚的指標:**\n- 審判がホイッスルを吹いている\n- 選手が止まっている、または歩いている\n- ボールが動いていない\n\n**サブタイプ:**\n- foul: ファウルによる中断\n- injury: 負傷による中断\n- substitution: 選手交代\n- referee_decision: VARチェック、審判の判断待ち\n- other: その他の中断\n\n### 3. set_piece\n構造的な再開プレー。\n\n**視覚的指標:**\n- 選手がボールの周りに配置している\n- 明確な攻撃・守備のセットアップが見られる\n- 審判の合図待ち、またはキッカーの準備\n\n**サブタイプ:**\n- corner: コーナーキック（コーナーフラッグ付近からボールが蹴られる）\n- free_kick: フリーキック（壁が形成されている場合が多い）\n- penalty: ペナルティキック（PKスポットにボール）\n- goal_kick: ゴールキック（GKがゴールエリアから蹴る）\n- throw_in: スローイン（選手がボールを両手で持っている）\n- kick_off: キックオフ（センターサークルからの開始）\n\n### 4. goal_moment\nゴールシーン。前後の重要な文脈を含む。\n\n**視覚的指標:**\n- ボールがゴールネットに入る瞬間\n- ゴールを決めた選手の歓喜\n- ゴール後のリプレイが続く場合もある\n\n**含める範囲:**\n- ゴール前10秒: 攻撃の起点、アシスト\n- ゴール後10秒: 歓喜、リアクション\n\n### 5. replay\nスローモーション再生やリプレイ映像。\n\n**視覚的指標:**\n- 映像がスローモーションになっている\n- 複数アングルからの同じシーンが流れる\n- 実時間とは異なる速度で再生されている\n- 画面にリプレイ表示のグラフィックがある場合も\n\n---\n\n## 信頼度ガイドライン\n\n| 信頼度 | 条件 |\n|--------|------|\n| 0.9-1.0 | セグメントの開始・終了点が明確、タイプが確実 |\n| 0.7-0.9 | 開始または終了が多少不明確だが、タイプは確実 |\n| 0.5-0.7 | タイプは推定だが、根拠がある |\n| 0.5未満 | **報告しない**（不確実なセグメントは除外） |\n\n---\n\n## 出力要件\n\n### メタデータ\n- totalDurationSec: 動画全体の長さ（秒）\n- videoQuality: good | fair | poor\n- qualityNotes: 画質に関する補足情報（optional）\n\n### チーム情報\n- home/away の各チームについて:\n  - colors: ユニフォームの色（例: \"red/white\"）\n  - attackingDirection: first_half で攻める方向 \"left_to_right\" | \"right_to_left\"\n\n### セグメント配列\n各セグメントには以下を含める:\n- startSec: 開始時刻（秒、小数点以下1桁）\n- endSec: 終了時刻（秒、小数点以下1桁）\n- type: セグメントタイプ\n- subtype: サブタイプ（該当する場合）\n- description: 何が起きているかの簡潔な説明（日本語）\n- attackingTeam: 攻撃側チーム（home | away、該当する場合）\n- importance: 1-5（active_playの場合必須）\n- confidence: 0.5-1.0（0.5未満は報告しない）\n- visualEvidence: 判断根拠の視覚的指標（brief description）\n\n---\n\n## 注意事項\n\n- セグメントは時系列順に並べる\n- セグメントは重複しないようにする（隙間があってもよい）\n- 不明確な部分は confidence を下げて記録（ただし0.5以上）\n- goal_moment は前後の文脈を含めて正確に\n- replay は実プレーと明確に区別する\n- 短すぎるセグメント（1秒未満）は隣接セグメントに統合する\n- **シュートシーンを含む可能性があるセグメントは importance を高く設定する**",
+  "output_schema": {
+    "metadata": {
+      "totalDurationSec": "number",
+      "videoQuality": "good | fair | poor",
+      "qualityNotes": "string (optional)"
+    },
+    "teams": {
+      "home": {
+        "colors": "string (e.g., 'red/white')",
+        "attackingDirection": "left_to_right | right_to_left"
+      },
+      "away": {
+        "colors": "string (e.g., 'blue/black')",
+        "attackingDirection": "left_to_right | right_to_left"
+      }
+    },
+    "segments": [
+      {
+        "startSec": "number (seconds, 1 decimal place)",
+        "endSec": "number (seconds, 1 decimal place)",
+        "type": "active_play | stoppage | set_piece | goal_moment | replay",
+        "subtype": "string (optional: corner | free_kick | penalty | goal_kick | throw_in | kick_off | foul | injury | substitution | referee_decision | other)",
+        "description": "string (brief Japanese description)",
+        "attackingTeam": "home | away (optional)",
+        "importance": "number 1-5 (required for active_play)",
+        "confidence": "number 0.5-1.0 (do not report below 0.5)",
+        "visualEvidence": "string (brief description of what you observed)"
+      }
+    ]
+  }
+}

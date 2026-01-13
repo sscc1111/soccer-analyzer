@@ -2,20 +2,29 @@
   "name": "@soccer/analyzer",
   "version": "0.0.1",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "node --watch dist/index.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.14.0",
+    "@google-cloud/vertexai": "^1.10.0",
     "@soccer/shared": "workspace:*",
     "firebase-admin": "^12.5.0",
+    "google-auth-library": "^10.5.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@types/uuid": "^11.0.0",
+    "@vitest/ui": "^2.1.8",
+    "esbuild": "^0.21.5",
+    "eslint": "^9.9.0",
     "typescript": "^5.5.4",
-    "eslint": "^9.9.0"
+    "vitest": "^2.1.8"
   }
 }

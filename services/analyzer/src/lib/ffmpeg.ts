@@ -187,6 +187,130 @@ export async function getMotionScores(inputPath: string, fps = 1) {
   return { fps, scores };
 }
 
+/**
+ * Extract frames from video at specified FPS
+ * Useful for player/ball detection pipelines
+ *
+ * @param inputPath - Path to input video
+ * @param outputDir - Directory to save extracted frames
+ * @param fps - Frames per second to extract (default: 5)
+ * @param startTime - Start time in seconds (optional)
+ * @param endTime - End time in seconds (optional)
+ * @returns Array of extracted frame paths
+ */
+export async function extractFrames(
+  inputPath: string,
+  outputDir: string,
+  fps = 5,
+  startTime?: number,
+  endTime?: number
+): Promise<string[]> {
+  const args: string[] = ["-hide_banner", "-y"];
+
+  // Add time range if specified
+  if (startTime !== undefined) {
+    args.push("-ss", startTime.toFixed(3));
+  }
+
+  args.push("-i", inputPath);
+
+  if (endTime !== undefined && startTime !== undefined) {
+    args.push("-t", (endTime - startTime).toFixed(3));
+  }
+
+  // Extract frames at specified FPS
+  args.push(
+    "-vf",
+    `fps=${fps}`,
+    "-q:v",
+    "3", // Quality (2 = highest, 31 = lowest)
+    `${outputDir}/frame_%06d.jpg`
+  );
+
+  await runCommand("ffmpeg", args);
+
+  // List extracted frames
+  const { stdout } = await runCommand("ls", ["-1", outputDir]);
+  const frames = stdout
+    .split("\n")
+    .filter((f) => f.startsWith("frame_") && f.endsWith(".jpg"))
+    .sort()
+    .map((f) => `${outputDir}/${f}`);
+
+  return frames;
+}
+
+/**
+ * Extract a single frame as raw RGB buffer
+ * Useful for in-memory processing without disk I/O
+ *
+ * @param inputPath - Path to input video
+ * @param timestamp - Timestamp in seconds
+ * @param width - Output width (default: original)
+ * @param height - Output height (default: original)
+ * @returns RGB buffer and dimensions
+ */
+export async function extractFrameBuffer(
+  inputPath: string,
+  timestamp: number,
+  width?: number,
+  height?: number
+): Promise<{ buffer: Buffer; width: number; height: number }> {
+  const scaleFilter = width && height ? `scale=${width}:${height}` : "";
+  const vfFilters = scaleFilter ? scaleFilter : "null";
+
+  const buffer = await runCommandBinary("ffmpeg", [
+    "-hide_banner",
+    "-ss",
+    timestamp.toFixed(3),
+    "-i",
+    inputPath,
+    "-frames:v",
+    "1",
+    "-vf",
+    vfFilters,
+    "-f",
+    "rawvideo",
+    "-pix_fmt",
+    "rgb24",
+    "-",
+  ]);
+
+  // Get dimensions from video probe if not specified
+  if (!width || !height) {
+    const probe = await probeVideo(inputPath);
+    return { buffer, width: probe.width, height: probe.height };
+  }
+
+  return { buffer, width, height };
+}
+
+/**
+ * Extract multiple frames as raw buffers for batch processing
+ * Returns an async generator for memory efficiency
+ *
+ * @param inputPath - Path to input video
+ * @param timestamps - Array of timestamps in seconds
+ * @param width - Output width (optional)
+ * @param height - Output height (optional)
+ */
+export async function* extractFrameBuffers(
+  inputPath: string,
+  timestamps: number[],
+  width?: number,
+  height?: number
+): AsyncGenerator<{
+  timestamp: number;
+  buffer: Buffer;
+  width: number;
+  height: number;
+}> {
+  for (const timestamp of timestamps) {
+    const frame = await extractFrameBuffer(inputPath, timestamp, width, height);
+    yield { timestamp, ...frame };
+  }
+}
+
 export async function getAudioLevels(inputPath: string, fps = 1) {
   const samplesPerFrame = Math.max(1, Math.floor(44100 / fps));
   const { stderr } = await runCommand("ffmpeg", [

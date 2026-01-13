@@ -1,0 +1,35 @@
+# Python cache
+__pycache__/
+*.py[cod]
+.Python
+
+# Virtual environments
+venv/
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+
+# Git
+.git/
+
+# Test files
+tests/
+*_test.py
+test_*.py
+
+# Large model files (except yolov8n.pt)
+yolov8s.pt
+yolov8m.pt
+yolov8l.pt
+yolov8x.pt
+
+# App directory (not used)
+app/
+scripts/
+
+# Docs
+*.md
+!README.md

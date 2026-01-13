@@ -17,7 +17,8 @@
       "@soccer/shared": [
         "../../packages/shared/src"
       ]
-    }
+    },
+    "types": []
   },
   "include": [
     "**/*.ts",

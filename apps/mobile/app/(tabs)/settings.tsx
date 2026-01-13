@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Pressable,
   TextInput,
   ActivityIndicator,
+  Switch,
 } from "react-native";
 import {
   Card,
@@ -15,17 +16,15 @@ import {
   Button,
 } from "../../components/ui";
 import { toast } from "../../components/ui/toast";
-import { useDefaultSettings } from "../../lib/hooks";
-import type { DefaultSettings } from "../../lib/hooks";
-
-const FORMATIONS = [
-  "4-4-2",
-  "4-3-3",
-  "3-5-2",
-  "4-2-3-1",
-  "5-3-2",
-  "3-4-3",
-] as const;
+import { useDefaultSettings, useNotifications, useNotificationStatus } from "../../lib/hooks";
+import type { DefaultSettings, NotificationSettings } from "../../lib/hooks";
+import {
+  validateDefaultSettings,
+  findDuplicateJerseyNumbers,
+  FORMATIONS_BY_FORMAT,
+  GAME_FORMAT_INFO,
+  type GameFormat,
+} from "@soccer/shared";
 
 const COLORS = [
   "#ef4444", // red
@@ -64,6 +63,137 @@ function ColorPicker({
         ))}
       </View>
     </View>
+  );
+}
+
+function NotificationToggle({
+  label,
+  description,
+  value,
+  onToggle,
+  disabled,
+}: {
+  label: string;
+  description?: string;
+  value: boolean;
+  onToggle: (value: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <View className="flex-row items-center justify-between py-3 border-b border-border">
+      <View className="flex-1 mr-4">
+        <Text className={`text-foreground ${disabled ? "opacity-50" : ""}`}>
+          {label}
+        </Text>
+        {description && (
+          <Text
+            className={`text-muted-foreground text-xs mt-1 ${
+              disabled ? "opacity-50" : ""
+            }`}
+          >
+            {description}
+          </Text>
+        )}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onToggle}
+        disabled={disabled}
+        trackColor={{ false: "#3f3f46", true: "#6366f1" }}
+        thumbColor={value ? "#ffffff" : "#a1a1aa"}
+      />
+    </View>
+  );
+}
+
+function NotificationSettingsSection() {
+  const { settings, updateSettings, register, isRegistering } = useNotifications();
+  const { isGranted, isChecking: checkingStatus } = useNotificationStatus();
+
+  const handleToggle = async (key: keyof NotificationSettings, value: boolean) => {
+    await updateSettings({ [key]: value });
+  };
+
+  const handleRequestPermission = async () => {
+    const token = await register();
+    if (token) {
+      toast({ title: "通知を有効にしました", variant: "success" });
+    } else {
+      toast({
+        title: "通知の許可が必要です",
+        message: "設定アプリから通知を許可してください",
+        variant: "warning",
+      });
+    }
+  };
+
+  if (checkingStatus) {
+    return (
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>通知設定</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ActivityIndicator size="small" color="rgb(99, 102, 241)" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="mb-4">
+      <CardHeader>
+        <CardTitle>通知設定</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {!isGranted ? (
+          <View>
+            <Text className="text-muted-foreground mb-3">
+              通知を有効にすると、分析の完了やエラーをお知らせします。
+            </Text>
+            <Button
+              onPress={handleRequestPermission}
+              disabled={isRegistering}
+            >
+              {isRegistering ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                "通知を有効にする"
+              )}
+            </Button>
+          </View>
+        ) : (
+          <View>
+            <NotificationToggle
+              label="通知を有効にする"
+              value={settings.enabled}
+              onToggle={(v) => handleToggle("enabled", v)}
+            />
+            <NotificationToggle
+              label="分析完了時"
+              description="試合の分析が完了したら通知"
+              value={settings.onAnalysisComplete}
+              onToggle={(v) => handleToggle("onAnalysisComplete", v)}
+              disabled={!settings.enabled}
+            />
+            <NotificationToggle
+              label="エラー発生時"
+              description="分析中にエラーが発生したら通知"
+              value={settings.onAnalysisError}
+              onToggle={(v) => handleToggle("onAnalysisError", v)}
+              disabled={!settings.enabled}
+            />
+            <NotificationToggle
+              label="レビュー必要時"
+              description="低信頼度のイベントがあれば通知"
+              value={settings.onReviewNeeded}
+              onToggle={(v) => handleToggle("onReviewNeeded", v)}
+              disabled={!settings.enabled}
+            />
+          </View>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -126,9 +256,13 @@ function RosterEditor({
   );
 }
 
+/** Default game format if not set */
+const DEFAULT_GAME_FORMAT: GameFormat = "eleven";
+
 export default function AppSettingsScreen() {
   const { settings, loading, updateSettings } = useDefaultSettings();
 
+  const [gameFormat, setGameFormat] = useState<GameFormat>(DEFAULT_GAME_FORMAT);
   const [teamColors, setTeamColors] = useState<DefaultSettings["teamColors"]>(
     {}
   );
@@ -139,22 +273,63 @@ export default function AppSettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
+  // Get available formations based on selected game format
+  const availableFormations = useMemo(
+    () => FORMATIONS_BY_FORMAT[gameFormat],
+    [gameFormat]
+  );
+
   useEffect(() => {
     if (!loading) {
+      setGameFormat(settings.gameFormat ?? DEFAULT_GAME_FORMAT);
       setTeamColors(settings.teamColors ?? {});
       setFormation(settings.formation?.shape);
       setRoster(settings.roster ?? []);
     }
   }, [settings, loading]);
 
+  // Reset formation if it's no longer valid for the selected game format
+  useEffect(() => {
+    if (formation && !availableFormations.includes(formation)) {
+      setFormation(availableFormations[0]);
+      markChanged();
+    }
+  }, [gameFormat, availableFormations]);
+
   const handleSave = async () => {
+    // Check for duplicate jersey numbers
+    const duplicates = findDuplicateJerseyNumbers(roster);
+    if (duplicates.length > 0) {
+      toast({
+        title: "Duplicate jersey numbers",
+        message: `Jersey numbers ${duplicates.join(", ")} are used more than once`,
+        variant: "warning",
+      });
+      return;
+    }
+
+    const settingsToSave = {
+      gameFormat,
+      teamColors,
+      formation: formation ? { shape: formation } : undefined,
+      roster,
+    };
+
+    // Validate settings before saving
+    const validationResult = validateDefaultSettings(settingsToSave);
+    if (!validationResult.success) {
+      const firstError = validationResult.error.issues[0];
+      toast({
+        title: "Invalid settings",
+        message: firstError.message,
+        variant: "error",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
-      await updateSettings({
-        teamColors,
-        formation: formation ? { shape: formation } : undefined,
-        roster,
-      });
+      await updateSettings(settingsToSave);
       toast({ title: "Settings saved", variant: "success" });
       setHasChanges(false);
     } catch (err: any) {
@@ -181,14 +356,51 @@ export default function AppSettingsScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background">
-      <View className="p-4">
+    <View className="flex-1 bg-background">
+      <ScrollView>
+        <View className="p-4">
         <Text className="text-2xl font-semibold text-foreground mb-1">
           Team Settings
         </Text>
         <Text className="text-muted-foreground mb-6">
           Default settings applied to new matches.
         </Text>
+
+        {/* Game Format */}
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>試合形式</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Text className="text-muted-foreground mb-3">
+              Select the game format for your team. This affects available formations.
+            </Text>
+            <View className="flex-row flex-wrap gap-2">
+              {(Object.keys(GAME_FORMAT_INFO) as GameFormat[]).map((format) => (
+                <Pressable
+                  key={format}
+                  onPress={() => {
+                    setGameFormat(format);
+                    markChanged();
+                  }}
+                  className={`px-4 py-2 rounded-lg ${
+                    gameFormat === format ? "bg-primary" : "bg-muted"
+                  }`}
+                >
+                  <Text
+                    className={`font-medium ${
+                      gameFormat === format
+                        ? "text-primary-foreground"
+                        : "text-foreground"
+                    }`}
+                  >
+                    {GAME_FORMAT_INFO[format].labelJa}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </CardContent>
+        </Card>
 
         {/* Team Colors */}
         <Card className="mb-4">
@@ -221,8 +433,11 @@ export default function AppSettingsScreen() {
             <CardTitle>Default Formation</CardTitle>
           </CardHeader>
           <CardContent>
+            <Text className="text-muted-foreground mb-3">
+              Available formations for {GAME_FORMAT_INFO[gameFormat].labelJa}
+            </Text>
             <View className="flex-row flex-wrap gap-2">
-              {FORMATIONS.map((f) => (
+              {availableFormations.map((f) => (
                 <Pressable
                   key={f}
                   onPress={() => {
@@ -268,6 +483,9 @@ export default function AppSettingsScreen() {
           </CardContent>
         </Card>
 
+        {/* Notification Settings */}
+        <NotificationSettingsSection />
+
         {/* Save Button */}
         {hasChanges && (
           <Button onPress={handleSave} disabled={saving} className="mb-4">
@@ -308,7 +526,8 @@ export default function AppSettingsScreen() {
             </Text>
           </CardContent>
         </Card>
-      </View>
-    </ScrollView>
+        </View>
+      </ScrollView>
+    </View>
   );
 }

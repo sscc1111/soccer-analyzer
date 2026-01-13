@@ -1,21 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { DefaultSettings } from "@soccer/shared";
 
 const STORAGE_KEY = "@soccer/defaultSettings";
 
-export type DefaultSettings = {
-  teamColors?: {
-    home?: string;
-    away?: string;
-  };
-  formation?: {
-    shape?: string;
-  };
-  roster?: Array<{
-    jerseyNo: number;
-    name?: string;
-  }>;
-};
+// Re-export type for convenience
+export type { DefaultSettings } from "@soccer/shared";
 
 type UseDefaultSettingsResult = {
   settings: DefaultSettings;
