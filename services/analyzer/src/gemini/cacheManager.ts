@@ -142,11 +142,15 @@ async function getAccessToken(): Promise<string> {
 
 /**
  * Make authenticated request to Vertex AI API with retry
+ *
+ * @param timeoutMs - Custom timeout in milliseconds (default: 60000)
+ *                    Use longer timeout for cache creation (e.g., 300000 = 5 min)
  */
 async function vertexAIRequest<T>(
   url: string,
   method: string,
-  body?: unknown
+  body?: unknown,
+  timeoutMs: number = 60000
 ): Promise<T> {
   return withRetry(
     async () => {
@@ -196,6 +200,7 @@ async function vertexAIRequest<T>(
     {
       maxRetries: 3,
       initialDelayMs: 1000,
+      timeoutMs,
       operationName: `${method} ${url}`,
       logger,
     }
@@ -252,10 +257,13 @@ async function createActualCache(
     displayName,
   });
 
+  // Use longer timeout for cache creation (5 minutes) as video processing takes time
+  const CACHE_CREATION_TIMEOUT_MS = 300000;
   const response = await vertexAIRequest<CreateCachedContentResponse>(
     url,
     "POST",
-    requestBody
+    requestBody,
+    CACHE_CREATION_TIMEOUT_MS
   );
 
   logger.info("Vertex AI context cache created successfully", {
