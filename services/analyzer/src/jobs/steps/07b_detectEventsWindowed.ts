@@ -11,11 +11,12 @@
 import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import { z } from "zod";
-import { callGeminiApi, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
+import { callGeminiApi, callGeminiApiWithCache, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
 import type { TeamId } from "@soccer/shared";
 import { getValidCacheOrFallback, getCacheManager, type GeminiCacheDoc } from "../../gemini/cacheManager";
 import { defaultLogger as logger, type ILogger } from "../../lib/logger";
 import { withRetry } from "../../lib/retry";
+import { parseJsonFromGemini } from "../../lib/json";
 
 // ============================================================================
 // Types
@@ -73,7 +74,7 @@ export interface RawEvent {
     shotResult?: "goal" | "saved" | "blocked" | "missed" | "post";
     // v3: Shot type classification
     shotType?: "power" | "placed" | "header" | "volley" | "long_range" | "chip";
-    setPieceType?: "corner" | "free_kick" | "penalty" | "throw_in";
+    setPieceType?: "corner" | "free_kick" | "penalty" | "throw_in" | "goal_kick" | "kick_off";
   };
   confidence: number;
   visualEvidence?: string;
@@ -85,22 +86,25 @@ export interface RawEvent {
 
 const WINDOW_CONFIG = {
   defaultDurationSec: 60,
-  overlapSec: 15,
+  // Phase 1.2: 50%オーバーラップで境界付近のイベント見逃しを防止
+  overlapSec: 30,
   fpsBySegment: {
     active_play: 3,
     set_piece: 2,
     goal_moment: 5,
-    stoppage: 1, // Or skip entirely
+    stoppage: 0.5, // Phase 1.4: ストッページを低FPSで処理（ファウル、交代、負傷検出用）
   } as Record<SegmentType, number>,
   parallelism: 5,
-  skipStoppages: true, // Skip stoppage segments entirely
+  // Phase 1.4: ストッページセグメントも検出対象にする（ファウル、交代、負傷）
+  skipStoppages: false,
 };
 
 // Prompt version
-const PROMPT_VERSION = process.env.PROMPT_VERSION || "v2";
+// Phase 1.1: v3にアップグレード（Few-Shotサンプル追加版）
+const PROMPT_VERSION = process.env.PROMPT_VERSION || "v3";
 
 // ============================================================================
-// Zod Schemas (v2 format)
+// Zod Schemas (v2 format) - With robust field name normalization
 // ============================================================================
 
 const EventDetailsSchema = z.object({
@@ -114,20 +118,77 @@ const EventDetailsSchema = z.object({
   shotResult: z.enum(["goal", "saved", "blocked", "missed", "post"]).optional(),
   // v3: Shot type classification
   shotType: z.enum(["power", "placed", "header", "volley", "long_range", "chip"]).optional(),
-  setPieceType: z.enum(["corner", "free_kick", "penalty", "throw_in"]).optional(),
+  setPieceType: z.enum(["corner", "free_kick", "penalty", "throw_in", "goal_kick", "kick_off"]).optional(),
 });
 
-const EventSchema = z.object({
-  timestamp: z.number().min(0),
-  type: z.enum(["pass", "carry", "turnover", "shot", "setPiece"]),
-  team: z.enum(["home", "away"]),
-  player: z.string().optional(),
-  zone: z.enum(["defensive_third", "middle_third", "attacking_third"]).optional(),
-  details: EventDetailsSchema.optional(),
-  // v3: Allow 0.3 minimum for shots (aggressive detection)
-  confidence: z.number().min(0.3).max(1),
-  visualEvidence: z.string().optional(),
-});
+/**
+ * Normalize event object from Gemini to handle field name variations
+ * Gemini sometimes returns: time/timestamp, eventType/type, teamId/team, score/confidence
+ */
+function normalizeEventFields(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const obj = raw as Record<string, unknown>;
+
+  // Normalize field names
+  const normalized: Record<string, unknown> = { ...obj };
+
+  // timestamp variations: time, timestamp, t
+  if (!("timestamp" in normalized)) {
+    if ("time" in obj) normalized.timestamp = obj.time;
+    else if ("t" in obj) normalized.timestamp = obj.t;
+  }
+
+  // type variations: eventType, type, event_type
+  if (!("type" in normalized)) {
+    if ("eventType" in obj) normalized.type = obj.eventType;
+    else if ("event_type" in obj) normalized.type = obj.event_type;
+  }
+
+  // team variations: teamId, team, teamName
+  if (!("team" in normalized)) {
+    if ("teamId" in obj) normalized.team = obj.teamId;
+    else if ("teamName" in obj) normalized.team = obj.teamName;
+  }
+
+  // confidence variations: score, confidence, probability
+  if (!("confidence" in normalized)) {
+    if ("score" in obj) normalized.confidence = obj.score;
+    else if ("probability" in obj) normalized.confidence = obj.probability;
+  }
+
+  // details may be at top level (flat) instead of nested
+  if (!("details" in normalized) || normalized.details === undefined) {
+    const detailFields = ["passType", "outcome", "targetPlayer", "distance", "endReason", "turnoverType", "shotResult", "shotType", "setPieceType"];
+    const flatDetails: Record<string, unknown> = {};
+    let hasDetails = false;
+    for (const field of detailFields) {
+      if (field in obj && obj[field] !== undefined) {
+        flatDetails[field] = obj[field];
+        hasDetails = true;
+      }
+    }
+    if (hasDetails) {
+      normalized.details = flatDetails;
+    }
+  }
+
+  return normalized;
+}
+
+const EventSchema = z.preprocess(
+  normalizeEventFields,
+  z.object({
+    timestamp: z.number().min(0),
+    type: z.enum(["pass", "carry", "turnover", "shot", "setPiece"]),
+    team: z.enum(["home", "away"]),
+    player: z.string().optional(),
+    zone: z.enum(["defensive_third", "middle_third", "attacking_third"]).optional(),
+    details: EventDetailsSchema.optional(),
+    // v3: Allow 0.3 minimum for shots (aggressive detection)
+    confidence: z.number().min(0.3).max(1),
+    visualEvidence: z.string().optional(),
+  })
+);
 
 const MetadataSchema = z.object({
   videoQuality: z.enum(["good", "fair", "poor"]).optional(),
@@ -135,10 +196,68 @@ const MetadataSchema = z.object({
   analyzedDurationSec: z.number().optional(),
 }).optional();
 
-const EventsResponseSchema = z.object({
-  metadata: MetadataSchema,
-  events: z.array(EventSchema),
-});
+// Support both { metadata, events } object format and direct array format
+// Gemini sometimes returns just the events array without the wrapper
+const EventsResponseSchema = z.union([
+  z.object({
+    metadata: MetadataSchema,
+    events: z.array(EventSchema),
+  }),
+  z.array(EventSchema), // Direct array fallback
+]);
+
+// ============================================================================
+// Gemini responseSchema - Force consistent output format
+// ============================================================================
+
+/**
+ * JSON Schema to force Gemini to return consistent output format.
+ * This is passed to generationConfig.responseSchema to enforce structure.
+ */
+const GEMINI_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    metadata: {
+      type: "object",
+      properties: {
+        videoQuality: { type: "string", enum: ["good", "fair", "poor"] },
+        qualityIssues: { type: "array", items: { type: "string" } },
+        analyzedDurationSec: { type: "number" },
+      },
+    },
+    events: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          timestamp: { type: "number", description: "Event time in seconds relative to window start" },
+          type: { type: "string", enum: ["pass", "carry", "turnover", "shot", "setPiece"] },
+          team: { type: "string", enum: ["home", "away"] },
+          player: { type: "string" },
+          zone: { type: "string", enum: ["defensive_third", "middle_third", "attacking_third"] },
+          details: {
+            type: "object",
+            properties: {
+              passType: { type: "string", enum: ["short", "medium", "long", "through", "cross"] },
+              outcome: { type: "string", enum: ["complete", "incomplete", "intercepted"] },
+              targetPlayer: { type: "string" },
+              distance: { type: "number" },
+              endReason: { type: "string", enum: ["pass", "shot", "dispossessed", "stopped"] },
+              turnoverType: { type: "string", enum: ["tackle", "interception", "bad_touch", "out_of_bounds", "other"] },
+              shotResult: { type: "string", enum: ["goal", "saved", "blocked", "missed", "post"] },
+              shotType: { type: "string", enum: ["power", "placed", "header", "volley", "long_range", "chip"] },
+              setPieceType: { type: "string", enum: ["corner", "free_kick", "penalty", "throw_in", "goal_kick", "kick_off"] },
+            },
+          },
+          confidence: { type: "number", minimum: 0.3, maximum: 1.0 },
+          visualEvidence: { type: "string" },
+        },
+        required: ["timestamp", "type", "team", "confidence"],
+      },
+    },
+  },
+  required: ["events"],
+};
 
 type GeminiEvent = z.infer<typeof EventSchema>;
 type EventsResponse = z.infer<typeof EventsResponseSchema>;
@@ -277,31 +396,52 @@ async function processWindow(
     "Return JSON only.",
   ].join("\n");
 
+  // Phase 3: Use context caching for cost reduction
+  const useCache = cache.cacheId && cache.version !== "fallback";
+  const generationConfig = {
+    // Phase 2.4: 0.35→0.25に調整（攻撃的シュート検出を維持しつつ安定性向上）
+    temperature: 0.25,
+    topP: 0.95,
+    topK: 40,
+    responseMimeType: "application/json",
+    responseSchema: GEMINI_RESPONSE_SCHEMA,
+  };
+
   return withRetry(
     async () => {
-      const request: Gemini3Request = {
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                fileData: {
-                  fileUri: cache.storageUri || cache.fileUri || "",
-                  mimeType: "video/mp4",
-                },
-              },
-              { text: promptText },
-            ],
-          },
-        ],
-        generationConfig: {
-          // v3: Increased from 0.2 to 0.35 for more aggressive shot detection
-          temperature: 0.35,
-          responseMimeType: "application/json",
-        },
-      };
+      let response;
 
-      const response = await callGeminiApi(projectId, modelId, request, { matchId, step: "detect_events_windowed" });
+      if (useCache) {
+        // Use cached content for ~84% cost savings
+        response = await callGeminiApiWithCache(
+          projectId,
+          modelId,
+          cache.cacheId,
+          promptText,
+          generationConfig,
+          { matchId, step: "detect_events_windowed" }
+        );
+      } else {
+        // Fallback to direct file URI when cache not available
+        const request: Gemini3Request = {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  fileData: {
+                    fileUri: cache.storageUri || cache.fileUri || "",
+                    mimeType: "video/mp4",
+                  },
+                },
+                { text: promptText },
+              ],
+            },
+          ],
+          generationConfig,
+        };
+        response = await callGeminiApi(projectId, modelId, request, { matchId, step: "detect_events_windowed" });
+      }
 
       // Check for safety filter blocks
       if (response.promptFeedback?.blockReason) {
@@ -314,11 +454,35 @@ async function processWindow(
         throw new Error("Empty response from Gemini");
       }
 
-      const parsed = JSON.parse(text);
+      const parsed = parseJsonFromGemini(text) as Record<string, unknown> | unknown[];
+
+      // Handle empty array case before Zod validation
+      // Gemini may return [] when no events are detected (e.g., stoppage segments)
+      if (Array.isArray(parsed) && parsed.length === 0) {
+        log.info("No events detected in window (empty response)", {
+          windowId: window.windowId,
+          segmentType: window.segmentContext?.type,
+        });
+        return [];
+      }
+
+      // Handle { events: [] } case
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray((parsed as Record<string, unknown>).events) && ((parsed as Record<string, unknown>).events as unknown[]).length === 0) {
+        log.info("No events detected in window (empty events array)", {
+          windowId: window.windowId,
+          segmentType: window.segmentContext?.type,
+          metadata: (parsed as Record<string, unknown>).metadata,
+        });
+        return [];
+      }
+
       const validated = EventsResponseSchema.parse(parsed);
 
+      // Handle both object format { metadata, events } and direct array format
+      const events = Array.isArray(validated) ? validated : validated.events;
+
       // Convert to RawEvent format with absolute timestamps
-      const rawEvents: RawEvent[] = validated.events.map((event) => ({
+      const rawEvents: RawEvent[] = events.map((event) => ({
         windowId: window.windowId,
         relativeTimestamp: event.timestamp,
         absoluteTimestamp: window.absoluteStart + event.timestamp,
@@ -450,7 +614,8 @@ export async function stepDetectEventsWindowed(
   });
 
   // Get cache info (with fallback to direct file URI)
-  const cache = await getValidCacheOrFallback(matchId);
+  // Phase 3.1: Pass step name for cache hit/miss tracking
+  const cache = await getValidCacheOrFallback(matchId, "detect_events_windowed");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot detect events", { matchId });

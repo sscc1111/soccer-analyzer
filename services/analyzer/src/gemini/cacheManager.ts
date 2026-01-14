@@ -30,6 +30,29 @@ export type GeminiCacheDoc = SharedGeminiCacheDoc & {
   lastUsedAt?: string;
 };
 
+// Phase 3.1: Cache hit/miss tracking types
+export type CacheAccessType = "hit" | "miss_expired" | "miss_not_found" | "fallback";
+
+export interface CacheAccessRecord {
+  matchId: string;
+  stepName: string;
+  accessType: CacheAccessType;
+  timestamp: string;
+  cacheId?: string;
+  remainingTtlSeconds?: number;
+  fallbackReason?: string;
+}
+
+export interface CacheHitStats {
+  matchId: string;
+  totalAccesses: number;
+  hits: number;
+  misses: number;
+  fallbacks: number;
+  hitRate: number;
+  accessesByStep: Record<string, { hits: number; misses: number; fallbacks: number }>;
+}
+
 export type CreateCacheOptions = {
   matchId: string;
   fileUri: string;
@@ -769,17 +792,168 @@ export function getCacheTtlSeconds(): number {
 }
 
 /**
+ * Phase 3.1: Calculate dynamic TTL based on match duration
+ *
+ * Longer videos require more processing time, so we extend the cache TTL.
+ * This ensures the cache remains valid throughout the entire analysis pipeline.
+ *
+ * @param durationSeconds - Video duration in seconds
+ * @returns TTL in seconds
+ */
+export function calculateDynamicTtl(durationSeconds: number): number {
+  // Check for environment override first
+  const envTtl = process.env.GEMINI_CONTEXT_CACHE_TTL;
+  if (envTtl) {
+    return parseInt(envTtl, 10);
+  }
+
+  // Dynamic TTL based on video duration:
+  // - Under 10 min (600s): 30 min TTL (1800s) - quick analysis
+  // - 10-30 min: 1 hour TTL (3600s)
+  // - 30-90 min: 2 hours TTL (7200s) - standard match
+  // - Over 90 min: 3 hours TTL (10800s) - long match or extended coverage
+
+  if (durationSeconds < 600) {
+    return 1800; // 30 minutes
+  } else if (durationSeconds < 1800) {
+    return 3600; // 1 hour
+  } else if (durationSeconds < 5400) {
+    return 7200; // 2 hours (default)
+  } else {
+    return 10800; // 3 hours
+  }
+}
+
+/**
+ * Phase 3.1: Record cache access for monitoring
+ * Tracks hits, misses, and fallbacks per step for hit rate calculation
+ */
+export async function recordCacheAccess(
+  matchId: string,
+  stepName: string,
+  accessType: CacheAccessType,
+  options?: {
+    cacheId?: string;
+    remainingTtlSeconds?: number;
+    fallbackReason?: string;
+  }
+): Promise<void> {
+  try {
+    const db = getDb();
+    const record: CacheAccessRecord = {
+      matchId,
+      stepName,
+      accessType,
+      timestamp: new Date().toISOString(),
+      cacheId: options?.cacheId,
+      remainingTtlSeconds: options?.remainingTtlSeconds,
+      fallbackReason: options?.fallbackReason,
+    };
+
+    // Store access record
+    await db
+      .collection("matches")
+      .doc(matchId)
+      .collection("cacheAccessLogs")
+      .add(record);
+
+    // Log with clear hit/miss indicator
+    const logLevel = accessType === "hit" ? "info" : "warn";
+    const logFn = logLevel === "info" ? logger.info : logger.warn;
+    logFn(`Cache ${accessType.toUpperCase()}`, {
+      matchId,
+      stepName,
+      accessType,
+      cacheId: options?.cacheId,
+      remainingTtlSeconds: options?.remainingTtlSeconds,
+      fallbackReason: options?.fallbackReason,
+    });
+  } catch (error) {
+    // Non-blocking - don't fail the pipeline for monitoring
+    logger.warn("Failed to record cache access", {
+      matchId,
+      stepName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Phase 3.1: Calculate cache hit statistics for a match
+ */
+export async function getCacheHitStats(matchId: string): Promise<CacheHitStats> {
+  const db = getDb();
+  const logsSnap = await db
+    .collection("matches")
+    .doc(matchId)
+    .collection("cacheAccessLogs")
+    .get();
+
+  const stats: CacheHitStats = {
+    matchId,
+    totalAccesses: 0,
+    hits: 0,
+    misses: 0,
+    fallbacks: 0,
+    hitRate: 0,
+    accessesByStep: {},
+  };
+
+  for (const doc of logsSnap.docs) {
+    const record = doc.data() as CacheAccessRecord;
+    stats.totalAccesses++;
+
+    // Initialize step stats if needed
+    if (!stats.accessesByStep[record.stepName]) {
+      stats.accessesByStep[record.stepName] = { hits: 0, misses: 0, fallbacks: 0 };
+    }
+
+    if (record.accessType === "hit") {
+      stats.hits++;
+      stats.accessesByStep[record.stepName].hits++;
+    } else if (record.accessType === "fallback") {
+      stats.fallbacks++;
+      stats.accessesByStep[record.stepName].fallbacks++;
+    } else {
+      stats.misses++;
+      stats.accessesByStep[record.stepName].misses++;
+    }
+  }
+
+  // Calculate hit rate
+  stats.hitRate = stats.totalAccesses > 0
+    ? (stats.hits / stats.totalAccesses) * 100
+    : 0;
+
+  return stats;
+}
+
+/**
  * Get cache or fallback to geminiUpload data from match document
  * This ensures Gemini steps can work even without active context caching
+ *
+ * Phase 3.1: Enhanced with cache hit/miss tracking
  */
 export async function getValidCacheOrFallback(
-  matchId: string
+  matchId: string,
+  stepName?: string
 ): Promise<GeminiCacheDoc | null> {
   const cacheManager = getCacheManager();
 
   // First try to get valid cache
   const cache = await cacheManager.getValidCache(matchId);
   if (cache) {
+    // Phase 3.1: Record cache hit (non-blocking to avoid latency)
+    if (stepName) {
+      const expiresAt = new Date(cache.expiresAt);
+      const now = new Date();
+      const remainingTtlSeconds = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000));
+
+      void recordCacheAccess(matchId, stepName, "hit", {
+        cacheId: cache.cacheId,
+        remainingTtlSeconds,
+      });
+    }
     return cache;
   }
 
@@ -788,6 +962,11 @@ export async function getValidCacheOrFallback(
   const matchSnap = await db.collection("matches").doc(matchId).get();
   if (!matchSnap.exists) {
     logger.warn("Match not found for cache fallback", { matchId });
+    if (stepName) {
+      void recordCacheAccess(matchId, stepName, "miss_not_found", {
+        fallbackReason: "match_not_found",
+      });
+    }
     return null;
   }
 
@@ -807,7 +986,19 @@ export async function getValidCacheOrFallback(
 
   if (!fileUri) {
     logger.warn("No file URI available for fallback", { matchId });
+    if (stepName) {
+      void recordCacheAccess(matchId, stepName, "miss_not_found", {
+        fallbackReason: "no_file_uri",
+      });
+    }
     return null;
+  }
+
+  // Phase 3.1: Record fallback usage (non-blocking)
+  if (stepName) {
+    void recordCacheAccess(matchId, stepName, "fallback", {
+      fallbackReason: "no_valid_cache",
+    });
   }
 
   logger.info("Using fallback file URI (no context caching)", { matchId, fileUri });

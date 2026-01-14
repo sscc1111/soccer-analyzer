@@ -16,6 +16,7 @@ import { stepSegmentVideo, type VideoSegmentDoc, type SegmentVideoResult } from 
 import { stepDetectEventsWindowed, type RawEvent, type DetectEventsWindowedResult } from "./steps/07b_detectEventsWindowed";
 import { stepDeduplicateEvents } from "./steps/07c_deduplicateEvents";
 import { stepVerifyEvents } from "./steps/07d_verifyEvents";
+import { stepSupplementClipsForUncoveredEvents } from "./steps/07e_supplementClipsForUncoveredEvents";
 import { stepDetectPlayers } from "./steps/07_detectPlayers";
 import { stepIdentifyPlayersGemini } from "./steps/08_identifyPlayersGemini";
 import { stepClassifyTeams } from "./steps/08_classifyTeams";
@@ -208,15 +209,23 @@ export async function runMatchPipeline({ matchId, jobId, type }: PipelineOptions
     completedSteps.push(step);
   };
 
-  const runWithRetry = async (step: string, fn: () => Promise<unknown>, retries = 1) => {
+  const runWithRetry = async (step: string, fn: () => Promise<unknown>, retries = 2) => {
     const stepLogger = logger.child({ step });
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       try {
         return await fn();
       } catch (err) {
         if (attempt >= retries) throw err;
-        stepLogger.warn("retrying step after error", { attempt: attempt + 1 });
-        await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        stepLogger.warn("retrying step after error", { attempt: attempt + 1, error: errorMessage });
+        // Update progress to show retry status (don't change status to error)
+        await updateMatchAnalysis({
+          status: "running",
+          progress: {
+            stepDetails: { retrying: true, attempt: attempt + 1, maxRetries: retries, step },
+          },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
       }
     }
   };
@@ -224,8 +233,11 @@ export async function runMatchPipeline({ matchId, jobId, type }: PipelineOptions
   try {
     pipelineStartTime = Date.now();
     await updateJob({ status: "running", step: "start", progress: 0 });
+    // Clear any previous error status when starting a new analysis
     await updateMatchAnalysis(
-      jobType === "analyze_match" ? { status: "running" } : { status: "running", activeVersion: runVersion }
+      jobType === "analyze_match"
+        ? { status: "running", errorMessage: FieldValue.delete() }
+        : { status: "running", activeVersion: runVersion, errorMessage: FieldValue.delete() }
     );
     logger.info(`pipeline start (${jobType})`, { version: runVersion });
 
@@ -316,6 +328,15 @@ export async function runMatchPipeline({ matchId, jobId, type }: PipelineOptions
           // Step 4: Verify low-confidence events (Phase 4)
           await runWithRetry("verify_events", () =>
             stepVerifyEvents({
+              matchId,
+              version: runVersion,
+              logger,
+            })
+          );
+
+          // Step 5: Supplement clips for uncovered events (Phase 2.2a)
+          await runWithRetry("supplement_clips", () =>
+            stepSupplementClipsForUncoveredEvents({
               matchId,
               version: runVersion,
               logger,

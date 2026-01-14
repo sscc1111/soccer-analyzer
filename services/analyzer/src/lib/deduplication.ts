@@ -48,17 +48,36 @@ export interface DeduplicatedEvent extends Omit<RawEvent, "windowId" | "relative
  * Configuration for deduplication algorithm
  */
 export interface DeduplicationConfig {
-  /** Maximum time difference (seconds) for events to be considered duplicates */
+  /** Maximum time difference (seconds) for events to be considered duplicates (fallback) */
   timeThreshold: number;
+  /** Phase 2.7: イベントタイプ別の時間閾値 */
+  timeThresholdByType?: Record<string, number>;
   /** Confidence boost per additional detection (capped at 1.0) */
   confidenceBoostPerDetection: number;
 }
 
 /**
+ * Phase 2.7: イベントタイプ別の時間閾値
+ * - shot: 1.0秒（瞬間的なイベント）
+ * - pass: 2.0秒（標準）
+ * - carry: 3.0秒（継続的なイベント）
+ * - turnover: 2.0秒
+ * - setPiece: 2.5秒
+ */
+export const TYPE_SPECIFIC_THRESHOLDS: Record<string, number> = {
+  shot: 1.0,
+  pass: 2.0,
+  carry: 3.0,
+  turnover: 2.0,
+  setPiece: 2.5,
+};
+
+/**
  * Default deduplication configuration
  */
 export const DEFAULT_DEDUPLICATION_CONFIG: DeduplicationConfig = {
-  timeThreshold: 2.0, // 2 seconds
+  timeThreshold: 2.0, // 2 seconds (fallback)
+  timeThresholdByType: TYPE_SPECIFIC_THRESHOLDS, // Phase 2.7: タイプ別閾値
   confidenceBoostPerDetection: 0.1, // 10% boost per additional detection
 };
 
@@ -94,7 +113,10 @@ export function clusterEvents(
     const sameType = event.type === lastInCluster.type;
     const sameTeam = event.team === lastInCluster.team;
 
-    if (timeDiff <= config.timeThreshold && sameType && sameTeam) {
+    // Phase 2.7: イベントタイプ別の時間閾値を使用
+    const threshold = config.timeThresholdByType?.[event.type] ?? config.timeThreshold;
+
+    if (timeDiff <= threshold && sameType && sameTeam) {
       // Add to current cluster
       currentCluster.push(event);
     } else {
@@ -166,11 +188,13 @@ export function mergeCluster(
     }
   }
 
-  // Calculate adjusted confidence
-  // Boost confidence for multiple detections, but cap at 1.0
+  // Phase 2.3: 信頼度計算を平均化ベースに変更
+  // 旧方式: baseConfidence * (1 + confidenceBoost) - 乗算で1.0に近づきすぎる問題
+  // 新方式: 加算ベースの平均化（クラスタサイズで緩やかにブースト）
   const baseConfidence = baseEvent.confidence;
-  const confidenceBoost = config.confidenceBoostPerDetection * (cluster.length - 1);
-  const adjustedConfidence = Math.min(1.0, baseConfidence * (1 + confidenceBoost));
+  const clusterBonus = config.confidenceBoostPerDetection * (cluster.length - 1);
+  // 加算ブースト + 正規化で1.0を超えないように
+  const adjustedConfidence = Math.min(1.0, baseConfidence + clusterBonus * (1 - baseConfidence));
 
   // Merge visual evidence (collect from all events)
   const visualEvidences = cluster

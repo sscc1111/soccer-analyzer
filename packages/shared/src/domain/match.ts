@@ -277,9 +277,15 @@ export type AnalysisProgress = {
 export type MatchDoc = {
   matchId: string;
   ownerUid: string;
+  /** Device ID for ownership (mobile app) */
+  deviceId?: string | null;
   teamId?: string | null;
   title?: string | null;
   date?: string | null; // ISO
+  /** When the match was created */
+  createdAt?: string | null;
+  /** When the match was last updated */
+  updatedAt?: string | null;
   video?: {
     storagePath: string;
     durationSec?: number;

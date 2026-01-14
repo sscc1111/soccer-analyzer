@@ -14,14 +14,15 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { callGeminiApi, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
+import { callGeminiApi, callGeminiApiWithCache, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
 import type { MatchSummaryDoc, TacticalAnalysisDoc, KeyMoment, PlayerHighlight } from "@soccer/shared";
 import { getDb } from "../../firebase/admin";
 import { getValidCacheOrFallback, getCacheManager, type GeminiCacheDoc } from "../../gemini/cacheManager";
 import { defaultLogger as logger, ILogger } from "../../lib/logger";
 import { withRetry } from "../../lib/retry";
 
-const SUMMARY_VERSION = "v1";
+// Phase 2.6: 環境変数対応でプロンプトバージョン管理を統一
+const SUMMARY_VERSION = process.env.SUMMARY_PROMPT_VERSION || "v1";
 
 const KeyMomentSchema = z.object({
   timestamp: z.number(),
@@ -102,7 +103,8 @@ export async function stepGenerateMatchSummary(
   }
 
   // Get cache info (with fallback to direct file URI)
-  const cache = await getValidCacheOrFallback(matchId);
+  // Phase 3.1: Pass step name for cache hit/miss tracking
+  const cache = await getValidCacheOrFallback(matchId, "generate_match_summary");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot generate match summary", { matchId });
@@ -127,10 +129,11 @@ export async function stepGenerateMatchSummary(
     : null;
 
   // Get event statistics (use correct collection names with version filter)
-  const [shotEventsSnap, passesSnap, turnoversSnap] = await Promise.all([
+  const [shotEventsSnap, passesSnap, turnoversSnap, clipsSnap] = await Promise.all([
     matchRef.collection("shotEvents").where("version", "==", version).get(),
     matchRef.collection("passEvents").where("version", "==", version).get(),
     matchRef.collection("turnoverEvents").where("version", "==", version).get(),
+    matchRef.collection("clips").where("version", "==", version).get(),
   ]);
 
   const eventStats = {
@@ -139,8 +142,42 @@ export async function stepGenerateMatchSummary(
     totalTurnovers: turnoversSnap.size,
   };
 
+  // Build clips array for timestamp matching
+  const clips = clipsSnap.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      clipId: doc.id,
+      t0: data.t0 as number,
+      t1: data.t1 as number,
+    };
+  });
+
   const prompt = await loadPrompt();
   const result = await generateSummaryWithGemini(cache, prompt, tacticalAnalysis, eventStats, matchId, stepLogger);
+
+  // Match keyMoments to clips by timestamp
+  const TIMESTAMP_TOLERANCE = 5; // seconds
+  const findClipByTimestamp = (timestamp: number): string | null => {
+    if (timestamp <= 0 || clips.length === 0) return null;
+    // Find clip whose t0-t1 range contains the timestamp (with tolerance)
+    const matchingClip = clips.find(
+      (c) => timestamp >= c.t0 - TIMESTAMP_TOLERANCE && timestamp <= c.t1 + TIMESTAMP_TOLERANCE
+    );
+    return matchingClip?.clipId ?? null;
+  };
+
+  // Enhance keyMoments with clipId for video navigation
+  const enhancedKeyMoments: KeyMoment[] = result.keyMoments.map((moment) => ({
+    ...moment,
+    type: moment.type as KeyMoment["type"],
+    clipId: findClipByTimestamp(moment.timestamp),
+  }));
+
+  stepLogger.info("Matched keyMoments to clips", {
+    matchId,
+    totalMoments: enhancedKeyMoments.length,
+    matchedMoments: enhancedKeyMoments.filter((m) => m.clipId).length,
+  });
 
   // Save match summary
   const summaryDoc: MatchSummaryDoc = {
@@ -148,7 +185,7 @@ export async function stepGenerateMatchSummary(
     version,
     headline: result.headline,
     narrative: result.narrative,
-    keyMoments: result.keyMoments as KeyMoment[],
+    keyMoments: enhancedKeyMoments,
     playerHighlights: result.playerHighlights as PlayerHighlight[],
     score: result.score,
     mvp: result.mvp ? {
@@ -219,30 +256,52 @@ async function generateSummaryWithGemini(
     "Return JSON only.",
   ].join("\n");
 
+  // Phase 3: Use context caching for cost reduction
+  const useCache = cache.cacheId && cache.version !== "fallback";
+  const generationConfig = {
+    // Phase 2.4: サマリー生成は創造的な表現のため高めのTemperatureを維持
+    temperature: 0.4,
+    topP: 0.95,
+    topK: 40,
+    responseMimeType: "application/json",
+  };
+
   return withRetry(
     async () => {
-      const request: Gemini3Request = {
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                fileData: {
-                  fileUri: cache.storageUri || cache.fileUri || "",
-                  mimeType: "video/mp4",
-                },
-              },
-              { text: promptText },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.4, // Slightly higher for more creative summaries
-          responseMimeType: "application/json",
-        },
-      };
+      let response;
 
-      const response = await callGeminiApi(projectId, modelId, request, { matchId, step: "generate_match_summary" });
+      if (useCache) {
+        // Use cached content for ~84% cost savings
+        response = await callGeminiApiWithCache(
+          projectId,
+          modelId,
+          cache.cacheId,
+          promptText,
+          generationConfig,
+          { matchId, step: "generate_match_summary" }
+        );
+      } else {
+        // Fallback to direct file URI when cache not available
+        const request: Gemini3Request = {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  fileData: {
+                    fileUri: cache.storageUri || cache.fileUri || "",
+                    mimeType: "video/mp4",
+                  },
+                },
+                { text: promptText },
+              ],
+            },
+          ],
+          generationConfig,
+        };
+        response = await callGeminiApi(projectId, modelId, request, { matchId, step: "generate_match_summary" });
+      }
+
       const text = extractTextFromResponse(response);
 
       if (!text) {

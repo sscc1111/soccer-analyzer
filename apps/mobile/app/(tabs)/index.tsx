@@ -18,6 +18,39 @@ function getStatusColor(status?: string) {
   }
 }
 
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "No date";
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("ja-JP", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return "Invalid date";
+  }
+}
+
+function formatRelativeTime(dateStr: string): string {
+  try {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString("ja-JP", { month: "short", day: "numeric" });
+  } catch {
+    return dateStr;
+  }
+}
+
 function MatchCard({ match }: { match: MatchDoc }) {
   const status = match.analysis?.status ?? "idle";
 
@@ -32,11 +65,11 @@ function MatchCard({ match }: { match: MatchDoc }) {
         </CardHeader>
         <CardContent>
           <Text className="text-muted-foreground text-sm">
-            {match.date ? new Date(match.date).toLocaleDateString() : "No date"}
+            {formatDate(match.date)}
           </Text>
           {match.analysis?.lastRunAt && (
             <Text className="text-muted-foreground text-xs mt-1">
-              Last analyzed: {new Date(match.analysis.lastRunAt).toLocaleString()}
+              Analyzed: {formatRelativeTime(match.analysis.lastRunAt)}
             </Text>
           )}
         </CardContent>

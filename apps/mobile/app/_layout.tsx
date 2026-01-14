@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { View, ActivityIndicator, Text } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { isExpoGo } from "../lib/expo-go-guard";
 import { useNotifications, useAuth } from "../lib/hooks";
 import { clearBadge } from "../lib/notifications";
@@ -50,9 +51,9 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="auto" />
       <Stack screenOptions={{ headerShown: false }} />
-    </>
+    </GestureHandlerRootView>
   );
 }

@@ -7,7 +7,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { callGeminiApi, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
+import { callGeminiApi, callGeminiApiWithCache, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
 import { getDb } from "../../firebase/admin";
 import { getValidCacheOrFallback, getCacheManager, type GeminiCacheDoc } from "../../gemini/cacheManager";
 import { defaultLogger as logger, ILogger } from "../../lib/logger";
@@ -146,7 +146,8 @@ export async function stepSegmentVideo(
   }
 
   // Get cache info (with fallback to direct file URI)
-  const cache = await getValidCacheOrFallback(matchId);
+  // Phase 3.1: Pass step name for cache hit/miss tracking
+  const cache = await getValidCacheOrFallback(matchId, "segment_video");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot segment video", { matchId });
@@ -270,30 +271,48 @@ async function segmentVideoWithGemini(
     "Return JSON only.",
   ].join("\n");
 
+  // Phase 3: Use context caching for cost reduction
+  const useCache = cache.cacheId && cache.version !== "fallback";
+  const generationConfig = {
+    temperature: 0.1, // Lower temperature for consistent segmentation
+    responseMimeType: "application/json",
+  };
+
   return withRetry(
     async () => {
-      const request: Gemini3Request = {
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                fileData: {
-                  fileUri: cache.storageUri || cache.fileUri || "",
-                  mimeType: "video/mp4",
-                },
-              },
-              { text: promptText },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1, // Lower temperature for consistent segmentation
-          responseMimeType: "application/json",
-        },
-      };
+      let response;
 
-      const response = await callGeminiApi(projectId, modelId, request, { matchId, step: "segment_video" });
+      if (useCache) {
+        // Use cached content for ~84% cost savings
+        response = await callGeminiApiWithCache(
+          projectId,
+          modelId,
+          cache.cacheId,
+          promptText,
+          generationConfig,
+          { matchId, step: "segment_video" }
+        );
+      } else {
+        // Fallback to direct file URI when cache not available
+        const request: Gemini3Request = {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  fileData: {
+                    fileUri: cache.storageUri || cache.fileUri || "",
+                    mimeType: "video/mp4",
+                  },
+                },
+                { text: promptText },
+              ],
+            },
+          ],
+          generationConfig,
+        };
+        response = await callGeminiApi(projectId, modelId, request, { matchId, step: "segment_video" });
+      }
 
       // Check for safety filter blocks
       if (response.promptFeedback?.blockReason) {

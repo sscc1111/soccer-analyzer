@@ -5,6 +5,8 @@ export type ClipDoc = {
   t1: number;
   reason: "motionPeak" | "audioPeak" | "manual" | "other";
   media: { clipPath: string; thumbPath?: string };
+  /** Analysis version this clip belongs to */
+  version?: string;
   gemini?: {
     model: string;
     promptVersion: string;

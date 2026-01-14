@@ -54,7 +54,17 @@ const MATCH_METRICS: MetricDisplay[] = [
 ];
 
 const PLAYER_METRICS: MetricDisplay[] = [
-  // Passes (Phase 3.1)
+  // Distance (Phase 4)
+  {
+    key: metricKeys.playerDistanceMeters,
+    label: "Distance Covered",
+    format: (v) => {
+      if (typeof v !== "number") return "N/A";
+      if (v >= 1000) return `${(v / 1000).toFixed(2)} km`;
+      return `${v.toFixed(0)} m`;
+    },
+  },
+  // Passes (Phase 3.1 + Phase 4 additions)
   {
     key: metricKeys.playerPassesAttempted,
     label: "Passes Attempted",
@@ -66,15 +76,33 @@ const PLAYER_METRICS: MetricDisplay[] = [
     format: (v) => String(v ?? 0),
   },
   {
+    key: metricKeys.playerPassesIncomplete,
+    label: "Passes Incomplete",
+    format: (v) => String(v ?? 0),
+  },
+  {
+    key: metricKeys.playerPassesIntercepted,
+    label: "Passes Intercepted",
+    format: (v) => String(v ?? 0),
+  },
+  {
     key: metricKeys.playerPassesSuccessRate,
     label: "Pass Success Rate",
     format: (v) => (typeof v === "number" ? `${v}%` : "N/A"),
   },
-  // Carry (Phase 3.2)
+  // Carry (Phase 3.2 + Phase 4 additions)
   {
     key: metricKeys.playerCarryCount,
     label: "Carries",
     format: (v) => String(v ?? 0),
+  },
+  {
+    key: metricKeys.playerCarryMeters,
+    label: "Carry Distance",
+    format: (v) => {
+      if (typeof v !== "number") return "N/A";
+      return `${v.toFixed(1)} m`;
+    },
   },
   {
     key: metricKeys.playerCarryIndex,

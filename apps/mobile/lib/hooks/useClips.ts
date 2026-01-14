@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase/firestore";
 import type { ClipDoc } from "@soccer/shared";
 
@@ -12,6 +12,7 @@ type UseClipsResult = {
 type ClipsFilter = {
   label?: string;
   minConfidence?: number;
+  version?: string;
 };
 
 export function useClips(matchId: string | null, filter?: ClipsFilter): UseClipsResult {
@@ -27,6 +28,7 @@ export function useClips(matchId: string | null, filter?: ClipsFilter): UseClips
     }
 
     const clipsRef = collection(db, "matches", matchId, "clips");
+    // Query all clips and filter client-side to avoid composite index requirements
     const q = query(clipsRef, orderBy("t0", "asc"));
 
     const unsubscribe = onSnapshot(
@@ -37,10 +39,17 @@ export function useClips(matchId: string | null, filter?: ClipsFilter): UseClips
           ...d.data(),
         })) as ClipDoc[];
 
-        // Client-side filtering
+        // Client-side filtering for version (avoids composite index requirement)
+        if (filter?.version) {
+          docs = docs.filter((c) => c.version === filter.version);
+        }
+
+        // Client-side filtering for label
         if (filter?.label) {
           docs = docs.filter((c) => c.gemini?.label === filter.label);
         }
+
+        // Client-side filtering for minConfidence
         if (filter?.minConfidence !== undefined) {
           docs = docs.filter(
             (c) => (c.gemini?.confidence ?? 0) >= (filter.minConfidence ?? 0)
@@ -51,13 +60,14 @@ export function useClips(matchId: string | null, filter?: ClipsFilter): UseClips
         setLoading(false);
       },
       (err) => {
+        console.error("Error loading clips:", err);
         setError(err);
         setLoading(false);
       }
     );
 
     return unsubscribe;
-  }, [matchId, filter?.label, filter?.minConfidence]);
+  }, [matchId, filter?.label, filter?.minConfidence, filter?.version]);
 
   return { clips, loading, error };
 }

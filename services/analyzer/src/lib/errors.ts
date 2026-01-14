@@ -206,6 +206,12 @@ export function isRetryableError(error: unknown): boolean {
     // Network errors
     if (message.includes("timeout") || message.includes("etimedout")) return true;
     if (message.includes("econnreset") || message.includes("enotfound")) return true;
+    // Fetch errors (Node.js undici)
+    if (message.includes("fetch failed")) return true;
+    if (message.includes("socket hang up")) return true;
+    if (message.includes("econnrefused")) return true;
+    // AbortError from signal timeout
+    if (error.name === "AbortError") return true;
   }
 
   return false;

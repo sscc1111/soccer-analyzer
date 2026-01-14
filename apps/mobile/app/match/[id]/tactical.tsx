@@ -7,9 +7,11 @@ import {
   Pressable,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { Card, CardContent, Button, Badge } from "../../../components/ui";
+import { Card, CardContent, Button, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui";
 import { TacticalView } from "../../../components/TacticalView";
-import { useMatch } from "../../../lib/hooks";
+import { TacticalInsights } from "../../../components/TacticalInsights";
+import { MatchSummaryView } from "../../../components/MatchSummaryView";
+import { useMatch, useTacticalAnalysis, useMatchSummary } from "../../../lib/hooks";
 import { useLivePositions } from "../../../lib/hooks/useLivePositions";
 import type { GameFormat } from "@soccer/shared";
 
@@ -28,6 +30,8 @@ export default function TacticalViewScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { match, loading: matchLoading, error: matchError } = useMatch(id);
   const { positions, ball, loading: positionsLoading, error: positionsError } = useLivePositions(id);
+  const { analysis: tacticalAnalysis, loading: analysisLoading, error: analysisError } = useTacticalAnalysis(id);
+  const { summary: matchSummary, loading: summaryLoading, error: summaryError } = useMatchSummary(id);
 
   const [viewMode, setViewMode] = useState<ViewMode>("live");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
@@ -95,12 +99,22 @@ export default function TacticalViewScreen() {
               {match?.title ?? "試合"}
             </Text>
             <Text className="text-muted-foreground text-sm">
-              リアルタイム選手配置
+              戦術分析 & ポジショニング
             </Text>
           </View>
 
-          {/* Mode Toggle */}
-          <View className="flex-row gap-2 mb-4">
+          {/* Main Tabs */}
+          <Tabs defaultValue="positions" className="mb-4">
+            <TabsList>
+              <TabsTrigger value="positions">ポジション</TabsTrigger>
+              <TabsTrigger value="analysis">戦術分析</TabsTrigger>
+              <TabsTrigger value="summary">サマリー</TabsTrigger>
+            </TabsList>
+
+            {/* Positions Tab */}
+            <TabsContent value="positions">
+              {/* Mode Toggle */}
+              <View className="flex-row gap-2 mb-4">
             <Pressable
               onPress={() => setViewMode("live")}
               className={`flex-1 py-2 px-4 rounded-lg ${
@@ -333,6 +347,31 @@ export default function TacticalViewScreen() {
               スタッツを見る
             </Button>
           </View>
+            </TabsContent>
+
+            {/* Tactical Analysis Tab */}
+            <TabsContent value="analysis">
+              <TacticalInsights
+                analysis={tacticalAnalysis}
+                loading={analysisLoading}
+                error={analysisError}
+                homeColor={homeColor}
+                awayColor={awayColor}
+              />
+            </TabsContent>
+
+            {/* Match Summary Tab */}
+            <TabsContent value="summary">
+              <MatchSummaryView
+                summary={matchSummary}
+                loading={summaryLoading}
+                error={summaryError}
+                matchId={id}
+                homeColor={homeColor}
+                awayColor={awayColor}
+              />
+            </TabsContent>
+          </Tabs>
         </View>
       </ScrollView>
     </>

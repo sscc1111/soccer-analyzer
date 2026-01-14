@@ -1,26 +1,190 @@
 {
   "version": "v1",
   "task": "Analyze tactical aspects of the soccer match including formations, team strategies, and key tactical insights.",
-  "instructions": "この試合動画から、戦術的な分析を行ってください。\n\n## 分析項目\n1. フォーメーション\n   - 各チームの基本フォーメーション (例: 4-3-3, 4-4-2)\n   - 攻撃時/守備時の変形\n\n2. テンポ\n   - パス/分で計測\n   - ビルドアップのスタイル\n\n3. 攻撃パターン\n   - サイド攻撃\n   - 中央突破\n   - カウンター\n   - セットピース活用\n\n4. 守備パターン\n   - プレス強度\n   - ブロック形成\n   - マーキング方式\n\n5. 重要な戦術的洞察",
+  "instructions": "この試合動画から、戦術的な分析を行ってください。\n\n## 分析項目\n\n### 1. フォーメーション\n- 各チームの基本フォーメーション (例: 4-3-3, 4-4-2)\n- 攻撃時/守備時の変形\n\n### 2. テンポ\n- パス/分で計測\n- ビルドアップのスタイル\n\n### 3. 攻撃パターン\n- サイド攻撃\n- 中央突破\n- カウンター\n- セットピース活用\n\n### 4. 守備パターン\n- プレス強度\n- ブロック形成\n- マーキング方式\n\n### 5. 重要な戦術的洞察",
+  "examples": [
+    {
+      "scenario": "4-3-3 vs 4-4-2 の試合、ホームチームがポゼッションで優位",
+      "output": {
+        "formation": {
+          "home": "4-3-3",
+          "away": "4-4-2"
+        },
+        "tempo": {
+          "home": 12.5,
+          "away": 8.3
+        },
+        "attackPatterns": [
+          "ホームチームは左サイドからの攻撃が多く、左ウイングとサイドバックの連携でチャンスを作る",
+          "中盤の3人がトライアングルを形成し、ショートパスでビルドアップ",
+          "アウェイチームは2トップを生かしたカウンター狙いが主体"
+        ],
+        "defensivePatterns": [
+          "ホームチームは前線からの積極的なプレスで相手のビルドアップを妨害",
+          "アウェイチームは4-4のブロックを形成し、中央を固める守備"
+        ],
+        "keyInsights": [
+          "ホームの左サイド攻撃に対し、アウェイの右サイドバックが孤立しがち",
+          "アウェイの2トップへのロングボールは効果的だが、中盤のサポートが遅れる",
+          "ホームチームはボランチのポジショニングで数的優位を作っている"
+        ],
+        "pressingIntensity": {
+          "home": 75,
+          "away": 45
+        },
+        "buildUpStyle": {
+          "home": "short",
+          "away": "long"
+        }
+      }
+    },
+    {
+      "scenario": "3-5-2 vs 4-3-3 の試合、激しいプレス合戦",
+      "output": {
+        "formation": {
+          "home": "3-5-2",
+          "away": "4-3-3"
+        },
+        "tempo": {
+          "home": 10.2,
+          "away": 11.8
+        },
+        "attackPatterns": [
+          "ホームのウイングバックが高い位置を取り、5レーン攻撃を展開",
+          "2トップのコンビネーションで中央突破を狙う",
+          "アウェイはウイングの1対1の仕掛けからチャンスを作る"
+        ],
+        "defensivePatterns": [
+          "ホームは5バックに可変し、中央を固める",
+          "アウェイはハイプレスでビルドアップを阻害し、高い位置でボールを奪う"
+        ],
+        "keyInsights": [
+          "ホームのウイングバックの上下動が激しく、後半スタミナ切れの可能性",
+          "アウェイの中盤3枚でホームの中盤5枚に対し数的不利だが、縦への速さで補う",
+          "セットプレーではホームの高さが有利"
+        ],
+        "pressingIntensity": {
+          "home": 60,
+          "away": 80
+        },
+        "buildUpStyle": {
+          "home": "mixed",
+          "away": "short"
+        }
+      }
+    },
+    {
+      "scenario": "5人制フットサル、2-2 vs 1-2-1",
+      "output": {
+        "formation": {
+          "home": "2-2",
+          "away": "1-2-1"
+        },
+        "tempo": {
+          "home": 18.5,
+          "away": 15.2
+        },
+        "attackPatterns": [
+          "ホームはピヴォ当てからの展開を軸に攻撃",
+          "フィクソからの対角線パスで逆サイドを使う",
+          "アウェイはアラを起点にワンツーで崩す"
+        ],
+        "defensivePatterns": [
+          "ホームはマンツーマンで激しくプレス",
+          "アウェイはゾーンで中央を締め、外に追い出す守備"
+        ],
+        "keyInsights": [
+          "ホームのピヴォの収め方が巧みで、起点になっている",
+          "アウェイはカウンターの精度を上げれば得点機会が増える",
+          "両チームともパワープレーの準備が必要"
+        ],
+        "pressingIntensity": {
+          "home": 85,
+          "away": 70
+        },
+        "buildUpStyle": {
+          "home": "short",
+          "away": "mixed"
+        }
+      }
+    }
+  ],
   "output_schema": {
     "formation": {
-      "home": "string (e.g., '4-3-3')",
+      "home": "string (e.g., '4-3-3', '3-5-2', '2-2' for futsal)",
       "away": "string"
     },
     "tempo": {
-      "home": "number (passes per minute)",
+      "home": "number (passes per minute, 8-20 for 11v11, 15-25 for futsal)",
       "away": "number"
     },
-    "attackPatterns": ["string"],
-    "defensivePatterns": ["string"],
-    "keyInsights": ["string"],
+    "attackPatterns": ["string (2-4 patterns per team combined)"],
+    "defensivePatterns": ["string (2-3 patterns per team combined)"],
+    "keyInsights": ["string (3-5 key tactical observations)"],
     "pressingIntensity": {
-      "home": "number (0-100)",
-      "away": "number (0-100)"
+      "home": "number (0-100 scale)",
+      "away": "number (0-100 scale)"
     },
     "buildUpStyle": {
       "home": "short | long | mixed",
       "away": "short | long | mixed"
     }
+  },
+  "guidelines": {
+    "formation_detection": {
+      "11v11_common": ["4-4-2", "4-3-3", "4-2-3-1", "3-5-2", "3-4-3", "5-3-2", "4-1-4-1"],
+      "futsal_common": ["2-2", "1-2-1", "3-1", "4-0"],
+      "7v7_common": ["3-2-1", "2-3-1", "3-3", "2-2-2"]
+    },
+    "pressing_intensity_scale": {
+      "0-30": "ローブロック守備、自陣に引いて守る",
+      "31-50": "ミドルブロック、中盤から守備開始",
+      "51-70": "中程度のプレス、ハーフライン付近から",
+      "71-85": "ハイプレス、相手陣内からプレス開始",
+      "86-100": "ゲーゲンプレス、ボールロスト直後の即時奪回"
+    },
+    "tempo_interpretation": {
+      "11v11": {
+        "low": "8未満 - 遅いテンポ、ロングボール主体",
+        "medium": "8-12 - 標準的なテンポ",
+        "high": "12以上 - 速いテンポ、ショートパス主体"
+      },
+      "futsal": {
+        "low": "15未満 - 遅いテンポ",
+        "medium": "15-20 - 標準的なテンポ",
+        "high": "20以上 - 速いテンポ"
+      }
+    }
+  },
+  "edge_cases": {
+    "description": "戦術分析における境界ケースの対処法",
+    "cases": [
+      {
+        "scenario": "フォーメーションが流動的な場合",
+        "guidance": "攻撃時と守備時で異なるフォーメーションを取るチームは、最も頻繁に見られる形を基本フォーメーションとして報告。必要に応じてkeyInsightsで可変システムについて言及。",
+        "example": "守備時4-4-2、攻撃時3-4-3 → 基本は4-4-2、keyInsightsで「攻撃時は3バック化」と説明"
+      },
+      {
+        "scenario": "人数が少ない試合（退場など）",
+        "guidance": "実際のピッチ上の人数に基づいてフォーメーションを判断。10人の場合は4-4-1や4-3-2など調整されたフォーメーションを報告。"
+      },
+      {
+        "scenario": "前半と後半でスタイルが大きく異なる",
+        "guidance": "テンポやプレス強度は試合全体の平均を報告。keyInsightsで前後半の違いを明記。",
+        "example": "前半ハイプレス(80)、後半ローブロック(30) → pressingIntensity: 55、keyInsightsで「前半は積極的プレス、後半は守備固め」"
+      },
+      {
+        "scenario": "映像が試合の一部のみ",
+        "guidance": "見える範囲のデータのみで分析。不確実な項目はkeyInsightsで「映像が部分的なため推定」と注記。"
+      },
+      {
+        "scenario": "フットサルと11人制の混同",
+        "guidance": "コートサイズ、ゴールサイズ、選手数から判断。フットサルは5人制、ピッチが小さい、ゴールキーパーの動きが活発。"
+      },
+      {
+        "scenario": "ユース/アマチュアの不安定な戦術",
+        "guidance": "明確なフォーメーションが見えない場合は最も近い形を報告し、信頼度をkeyInsightsで言及。「フォーメーションは流動的で明確ではない」等。"
+      }
+    ]
   }
 }

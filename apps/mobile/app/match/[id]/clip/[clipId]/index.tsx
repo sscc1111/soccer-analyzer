@@ -10,6 +10,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { Video, ResizeMode } from "expo-av";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { db } from "../../../../../lib/firebase/firestore";
+import { useStorageUrl } from "../../../../../lib/hooks";
 import {
   Card,
   CardHeader,
@@ -58,6 +59,9 @@ export default function ClipDetailScreen() {
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const videoRef = useRef<Video>(null);
+
+  // Get download URL for clip video
+  const { url: videoUrl, loading: videoUrlLoading } = useStorageUrl(clip?.media?.clipPath);
 
   // Build player roster from match settings
   const players = useMemo<Player[]>(() => {
@@ -171,10 +175,15 @@ export default function ClipDetailScreen() {
     <ScrollView className="flex-1 bg-background">
       {/* Video Player */}
       <View className="aspect-video bg-black">
-        {clip.media.clipPath ? (
+        {videoUrlLoading ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" color="rgb(99, 102, 241)" />
+            <Text className="text-muted-foreground mt-2">Loading video...</Text>
+          </View>
+        ) : videoUrl ? (
           <Video
             ref={videoRef}
-            source={{ uri: clip.media.clipPath }}
+            source={{ uri: videoUrl }}
             style={{ flex: 1 }}
             useNativeControls
             resizeMode={ResizeMode.CONTAIN}

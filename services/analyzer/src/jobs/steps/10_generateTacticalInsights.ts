@@ -7,7 +7,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { callGeminiApi, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
+import { callGeminiApi, callGeminiApiWithCache, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
 import type { TacticalAnalysisDoc, GameFormat } from "@soccer/shared";
 import { GAME_FORMAT_INFO, FORMATIONS_BY_FORMAT } from "@soccer/shared";
 import { getDb } from "../../firebase/admin";
@@ -15,7 +15,8 @@ import { getValidCacheOrFallback, getCacheManager, type GeminiCacheDoc } from ".
 import { defaultLogger as logger, ILogger } from "../../lib/logger";
 import { withRetry } from "../../lib/retry";
 
-const TACTICAL_VERSION = "v1";
+// Phase 2.6: 環境変数対応でプロンプトバージョン管理を統一
+const TACTICAL_VERSION = process.env.TACTICAL_PROMPT_VERSION || "v1";
 
 const TacticalResponseSchema = z.object({
   formation: z.object({
@@ -90,7 +91,8 @@ export async function stepGenerateTacticalInsights(
   const validFormations = FORMATIONS_BY_FORMAT[gameFormat];
 
   // Get cache info (with fallback to direct file URI)
-  const cache = await getValidCacheOrFallback(matchId);
+  // Phase 3.1: Pass step name for cache hit/miss tracking
+  const cache = await getValidCacheOrFallback(matchId, "generate_tactical_insights");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot generate tactical insights", { matchId });
@@ -110,8 +112,43 @@ export async function stepGenerateTacticalInsights(
     validFormations,
   });
 
+  // Phase 2.5: イベントデータを取得して戦術分析の精度を向上
+  const [passEventsSnap, shotEventsSnap, turnoverEventsSnap] = await Promise.all([
+    matchRef.collection("passEvents").where("version", "==", version).get(),
+    matchRef.collection("shotEvents").where("version", "==", version).get(),
+    matchRef.collection("turnoverEvents").where("version", "==", version).get(),
+  ]);
+
+  // チーム別のイベント統計を集計
+  const eventStats = {
+    home: {
+      passes: passEventsSnap.docs.filter((d) => d.data().team === "home").length,
+      passesComplete: passEventsSnap.docs.filter((d) => d.data().team === "home" && d.data().outcome === "complete").length,
+      shots: shotEventsSnap.docs.filter((d) => d.data().team === "home").length,
+      shotsOnTarget: shotEventsSnap.docs.filter((d) => d.data().team === "home" && ["goal", "saved"].includes(d.data().result)).length,
+      // turnoverType: "won" | "lost" を使用（typeはイベントタイプで "turnover" 固定）
+      turnoversWon: turnoverEventsSnap.docs.filter((d) => d.data().team === "home" && d.data().turnoverType === "won").length,
+      turnoversLost: turnoverEventsSnap.docs.filter((d) => d.data().team === "home" && d.data().turnoverType === "lost").length,
+    },
+    away: {
+      passes: passEventsSnap.docs.filter((d) => d.data().team === "away").length,
+      passesComplete: passEventsSnap.docs.filter((d) => d.data().team === "away" && d.data().outcome === "complete").length,
+      shots: shotEventsSnap.docs.filter((d) => d.data().team === "away").length,
+      shotsOnTarget: shotEventsSnap.docs.filter((d) => d.data().team === "away" && ["goal", "saved"].includes(d.data().result)).length,
+      turnoversWon: turnoverEventsSnap.docs.filter((d) => d.data().team === "away" && d.data().turnoverType === "won").length,
+      turnoversLost: turnoverEventsSnap.docs.filter((d) => d.data().team === "away" && d.data().turnoverType === "lost").length,
+    },
+    total: {
+      passes: passEventsSnap.size,
+      shots: shotEventsSnap.size,
+      turnovers: turnoverEventsSnap.size,
+    },
+  };
+
+  stepLogger.info("Event statistics for tactical analysis", { matchId, eventStats: eventStats.total });
+
   const prompt = await loadPrompt();
-  const result = await generateTacticalWithGemini(cache, prompt, gameFormat, matchId, stepLogger);
+  const result = await generateTacticalWithGemini(cache, prompt, gameFormat, eventStats, matchId, stepLogger);
 
   // Save tactical analysis
   const tacticalDoc: TacticalAnalysisDoc = {
@@ -143,10 +180,18 @@ export async function stepGenerateTacticalInsights(
   return { matchId, generated: true, skipped: false };
 }
 
+// Phase 2.5: イベント統計の型定義
+type EventStats = {
+  home: { passes: number; passesComplete: number; shots: number; shotsOnTarget: number; turnoversWon: number; turnoversLost: number };
+  away: { passes: number; passesComplete: number; shots: number; shotsOnTarget: number; turnoversWon: number; turnoversLost: number };
+  total: { passes: number; shots: number; turnovers: number };
+};
+
 async function generateTacticalWithGemini(
   cache: GeminiCacheDoc,
   prompt: { task: string; instructions: string; output_schema: Record<string, unknown> },
   gameFormat: GameFormat,
+  eventStats: EventStats,
   matchId: string,
   log: ILogger
 ): Promise<TacticalResponse> {
@@ -168,9 +213,32 @@ async function generateTacticalWithGemini(
     `- 重要: ${formatInfo.labelJa}に適したフォーメーションを使用してください（11人制のフォーメーションは使用しないでください）`,
   ].join("\n");
 
+  // Phase 2.5: イベント統計コンテキストを追加
+  const homePassRate = eventStats.home.passes > 0
+    ? Math.round((eventStats.home.passesComplete / eventStats.home.passes) * 100)
+    : 0;
+  const awayPassRate = eventStats.away.passes > 0
+    ? Math.round((eventStats.away.passesComplete / eventStats.away.passes) * 100)
+    : 0;
+
+  const eventStatsContext = [
+    "\n## 検出されたイベント統計（参考データ）",
+    "### ホームチーム",
+    `- パス: ${eventStats.home.passes}本 (成功率: ${homePassRate}%)`,
+    `- シュート: ${eventStats.home.shots}本 (枠内: ${eventStats.home.shotsOnTarget}本)`,
+    `- ターンオーバー: 獲得${eventStats.home.turnoversWon}回 / 喪失${eventStats.home.turnoversLost}回`,
+    "### アウェイチーム",
+    `- パス: ${eventStats.away.passes}本 (成功率: ${awayPassRate}%)`,
+    `- シュート: ${eventStats.away.shots}本 (枠内: ${eventStats.away.shotsOnTarget}本)`,
+    `- ターンオーバー: 獲得${eventStats.away.turnoversWon}回 / 喪失${eventStats.away.turnoversLost}回`,
+    "",
+    "注: これらの統計は動画分析で検出されたイベントに基づいています。戦術分析の参考にしてください。",
+  ].join("\n");
+
   const promptText = [
     prompt.instructions,
     formatContext,
+    eventStatsContext,
     "",
     "## 出力形式 (JSON)",
     JSON.stringify(prompt.output_schema, null, 2),
@@ -180,30 +248,52 @@ async function generateTacticalWithGemini(
     "Return JSON only.",
   ].join("\n");
 
+  // Phase 3: Use context caching for cost reduction
+  const useCache = cache.cacheId && cache.version !== "fallback";
+  const generationConfig = {
+    // Phase 2.4: 分析タスクは高めのTemperatureで創造的な洞察
+    temperature: 0.4,
+    topP: 0.95,
+    topK: 40,
+    responseMimeType: "application/json",
+  };
+
   return withRetry(
     async () => {
-      const request: Gemini3Request = {
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                fileData: {
-                  fileUri: cache.storageUri || cache.fileUri || "",
-                  mimeType: "video/mp4",
-                },
-              },
-              { text: promptText },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.3,
-          responseMimeType: "application/json",
-        },
-      };
+      let response;
 
-      const response = await callGeminiApi(projectId, modelId, request, { matchId, step: "generate_tactical_insights" });
+      if (useCache) {
+        // Use cached content for ~84% cost savings
+        response = await callGeminiApiWithCache(
+          projectId,
+          modelId,
+          cache.cacheId,
+          promptText,
+          generationConfig,
+          { matchId, step: "generate_tactical_insights" }
+        );
+      } else {
+        // Fallback to direct file URI when cache not available
+        const request: Gemini3Request = {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  fileData: {
+                    fileUri: cache.storageUri || cache.fileUri || "",
+                    mimeType: "video/mp4",
+                  },
+                },
+                { text: promptText },
+              ],
+            },
+          ],
+          generationConfig,
+        };
+        response = await callGeminiApi(projectId, modelId, request, { matchId, step: "generate_tactical_insights" });
+      }
+
       const text = extractTextFromResponse(response);
 
       if (!text) {

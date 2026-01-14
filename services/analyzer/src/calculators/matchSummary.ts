@@ -13,6 +13,7 @@ type EventLike = {
 type ClipLike = {
   clipId: string;
   t0: number;
+  t1: number;
   gemini?: {
     label?: string;
     confidence?: number;
@@ -20,6 +21,12 @@ type ClipLike = {
     summary?: string;
   };
 };
+
+/** Minimum confidence threshold for highlighting clips */
+const MIN_HIGHLIGHT_CONFIDENCE = 0.5;
+
+/** Timestamp matching tolerance in seconds */
+const TIMESTAMP_TOLERANCE = 5;
 
 export async function calcMatchSummary(ctx: CalculatorContext): Promise<StatsOutput> {
   // First try legacy events collection (from build_events)
@@ -119,8 +126,10 @@ export async function calcMatchSummary(ctx: CalculatorContext): Promise<StatsOut
   }
 
   // Get top moments from clips (with clipId for mobile app navigation)
-  // Prefer clips with Gemini labels for better UX
-  const labeledClips = clips.filter((c) => c.gemini?.label && c.gemini?.confidence);
+  // Prefer clips with Gemini labels and sufficient confidence for better UX
+  const labeledClips = clips.filter(
+    (c) => c.gemini?.label && (c.gemini?.confidence ?? 0) >= MIN_HIGHLIGHT_CONFIDENCE
+  );
   const topMomentsFromClips = labeledClips
     .slice()
     .sort((a, b) => (b.gemini?.confidence ?? 0) - (a.gemini?.confidence ?? 0))
@@ -133,21 +142,42 @@ export async function calcMatchSummary(ctx: CalculatorContext): Promise<StatsOut
       summary: clip.gemini?.summary ?? "",
     }));
 
-  // If no labeled clips, fall back to events (without clipId - will show "clip not found")
-  const topMoments =
-    topMomentsFromClips.length > 0
-      ? topMomentsFromClips
-      : allEvents
-          .slice()
-          .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
-          .slice(0, 5)
-          .map((event) => ({
-            clipId: "", // No clip available
-            label: event.type,
-            confidence: event.confidence,
-            title: `${event.type} by ${event.player || "unknown"}`,
-            summary: `${event.type} event at ${event.timestamp?.toFixed(1) ?? 0}s`,
-          }));
+  // Helper function to find clipId by timestamp matching
+  const findClipByTimestamp = (timestamp: number): string | null => {
+    if (timestamp <= 0 || clips.length === 0) return null;
+    // Find clip whose t0-t1 range contains the event timestamp (with tolerance)
+    const matchingClip = clips.find(
+      (c) => timestamp >= c.t0 - TIMESTAMP_TOLERANCE && timestamp <= c.t1 + TIMESTAMP_TOLERANCE
+    );
+    return matchingClip?.clipId ?? null;
+  };
+
+  // If no labeled clips, try to match events to clips by timestamp
+  // This allows navigation to work even when Gemini labeling fails
+  let topMoments: Array<{
+    clipId: string | null;
+    label: string;
+    confidence: number;
+    title: string;
+    summary: string;
+  }>;
+
+  if (topMomentsFromClips.length > 0) {
+    topMoments = topMomentsFromClips;
+  } else {
+    // Fall back to events, attempting to match each event to a clip by timestamp
+    topMoments = allEvents
+      .slice()
+      .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+      .slice(0, 5)
+      .map((event) => ({
+        clipId: findClipByTimestamp(event.timestamp), // Try to find matching clip
+        label: event.type,
+        confidence: event.confidence,
+        title: `${event.type} by ${event.player || "unknown"}`,
+        summary: `${event.type} event at ${event.timestamp?.toFixed(1) ?? 0}s`,
+      }));
+  }
 
   const avgConfidence =
     allEvents.length > 0

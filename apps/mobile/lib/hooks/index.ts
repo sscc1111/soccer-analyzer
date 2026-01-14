@@ -26,3 +26,6 @@ export { useLivePositions, usePositionsAtFrame } from "./useLivePositions";
 export type { LivePosition, BallPosition, LivePositionsData } from "./useLivePositions";
 export { useUploadQueue } from "./useUploadQueue";
 export type { UseUploadQueueReturn } from "./useUploadQueue";
+export { useTacticalAnalysis } from "./useTacticalAnalysis";
+export { useMatchSummary } from "./useMatchSummary";
+export { useStorageUrl } from "./useStorageUrl";

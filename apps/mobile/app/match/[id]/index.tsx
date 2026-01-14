@@ -104,7 +104,7 @@ export default function MatchDashboardScreen() {
     | Record<string, number>
     | undefined;
   const topMoments = matchStats?.metrics["match.events.topMoments"] as
-    | Array<{ label: string; title: string; clipId: string }>
+    | Array<{ label: string; title: string; clipId: string | null }>
     | undefined;
 
   const totalEvents = events.length;
@@ -245,19 +245,32 @@ export default function MatchDashboardScreen() {
               <View>
                 {topMoments.slice(0, 5).map((moment, idx) => (
                   <Pressable
-                    key={moment.clipId}
-                    onPress={() => router.push(`/match/${id}/clip/${moment.clipId}`)}
+                    key={moment.clipId || `moment-${idx}`}
+                    onPress={() => {
+                      // Only navigate if clipId exists and is not empty
+                      if (moment.clipId) {
+                        router.push(`/match/${id}/clip/${moment.clipId}`);
+                      }
+                    }}
+                    disabled={!moment.clipId}
                   >
-                    <Card className="mb-2">
+                    <Card className={`mb-2 ${!moment.clipId ? "opacity-60" : ""}`}>
                       <CardContent className="py-3 flex-row items-center">
                         <Text className="text-primary font-bold mr-3">
                           #{idx + 1}
                         </Text>
                         <View className="flex-1">
                           <Text className="text-foreground">{moment.title}</Text>
-                          <Text className="text-muted-foreground text-xs capitalize">
-                            {moment.label}
-                          </Text>
+                          <View className="flex-row items-center">
+                            <Text className="text-muted-foreground text-xs capitalize">
+                              {moment.label}
+                            </Text>
+                            {!moment.clipId && (
+                              <Text className="text-muted-foreground text-xs ml-2">
+                                (no clip)
+                              </Text>
+                            )}
+                          </View>
                         </View>
                       </CardContent>
                     </Card>

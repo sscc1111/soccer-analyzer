@@ -1,28 +1,202 @@
 {
   "version": "v1",
   "task": "Generate a comprehensive match summary including headline, narrative, key moments, and player highlights.",
-  "instructions": "この試合動画から、試合サマリーを生成してください。\n\n## 生成項目\n1. ヘッドライン\n   - 試合を一言で表す印象的な見出し\n\n2. 試合経過\n   - 前半の流れ\n   - 後半の流れ\n   - 全体の総括（オプション）\n\n3. キーモーメント\n   - 試合を左右した重要な瞬間\n   - タイムスタンプと説明\n   - 重要度 (0.0-1.0)\n\n4. 選手ハイライト\n   - 目立った活躍をした選手\n   - 具体的な成果\n\n5. スコア（検出できた場合）",
+  "instructions": "この試合動画から、試合サマリーを生成してください。\n\n## 生成項目\n\n### 1. ヘッドライン\n- 試合を一言で表す印象的な見出し\n- 15-30文字程度\n\n### 2. 試合経過\n- 前半の流れ（主な出来事、攻守のバランス）\n- 後半の流れ（展開の変化、決定的場面）\n- 全体の総括（オプション）\n\n### 3. キーモーメント\n- 試合を左右した重要な瞬間（3-7個）\n- タイムスタンプと説明\n- 重要度 (0.0-1.0)\n\n### 4. 選手ハイライト\n- 目立った活躍をした選手（2-5人）\n- 具体的な成果\n\n### 5. MVP選出\n- 試合で最も活躍した選手\n\n### 6. スコア（検出できた場合）",
+  "examples": [
+    {
+      "scenario": "ホームチームが2-1で逆転勝利した緊迫した試合",
+      "output": {
+        "headline": "劇的逆転！ホームが土壇場で勝ち越し",
+        "narrative": {
+          "firstHalf": "前半はアウェイチームがペースを握る展開。15分にアウェイの#9がミドルシュートを決めて先制。ホームはボールを持たされる形となり、なかなかシュートまで持ち込めない苦しい時間が続いた。",
+          "secondHalf": "後半開始からホームチームが攻勢を強める。55分にホームの#10のスルーパスから#7が同点ゴール。その後は一進一退の攻防が続いたが、85分にホームの#10がPKを獲得し、自ら決めて逆転勝利を収めた。",
+          "overall": "前半の劣勢を後半に跳ね返したホームチームの精神力が光った試合。アウェイも善戦したが、終盤の集中力の差が勝敗を分けた。"
+        },
+        "keyMoments": [
+          {
+            "timestamp": 900,
+            "description": "アウェイ#9がペナルティエリア外からのミドルシュートで先制",
+            "importance": 0.85,
+            "type": "goal"
+          },
+          {
+            "timestamp": 3300,
+            "description": "ホーム#10のスルーパスから#7が同点ゴール",
+            "importance": 0.9,
+            "type": "goal"
+          },
+          {
+            "timestamp": 5100,
+            "description": "ホーム#10がPKを獲得し、自ら決めて逆転",
+            "importance": 1.0,
+            "type": "goal"
+          }
+        ],
+        "playerHighlights": [
+          {
+            "player": "#10",
+            "jerseyNumber": 10,
+            "team": "home",
+            "achievement": "1ゴール1アシスト、試合を決定づける活躍"
+          },
+          {
+            "player": "#7",
+            "jerseyNumber": 7,
+            "team": "home",
+            "achievement": "同点ゴールを決め、流れを変えた"
+          },
+          {
+            "player": "#9",
+            "jerseyNumber": 9,
+            "team": "away",
+            "achievement": "見事なミドルシュートで先制点"
+          }
+        ],
+        "score": {
+          "home": 2,
+          "away": 1
+        },
+        "mvp": {
+          "player": "#10",
+          "team": "home",
+          "achievement": "1ゴール1アシストで逆転勝利の立役者"
+        }
+      }
+    },
+    {
+      "scenario": "0-0のスコアレスドローだが、見応えのある攻防が続いた試合",
+      "output": {
+        "headline": "白熱のスコアレスドロー！両GKが好セーブ連発",
+        "narrative": {
+          "firstHalf": "両チームとも積極的に攻め合う展開。ホームの#11が決定機を迎えるもGKがビッグセーブ。アウェイも#8のミドルがポストを直撃するなど、惜しい場面が続いた。",
+          "secondHalf": "後半は互いに守備の強度を上げ、中盤での激しいプレスの応酬に。75分にはホームがPKを獲得するも、アウェイGKが見事にストップ。最後まで均衡は崩れずスコアレスドローに終わった。",
+          "overall": "両チームの守備の堅さが際立った一戦。特に両GKの活躍が光り、質の高いゴールレスマッチとなった。"
+        },
+        "keyMoments": [
+          {
+            "timestamp": 1200,
+            "description": "ホーム#11の決定機をアウェイGKがビッグセーブ",
+            "importance": 0.85,
+            "type": "save"
+          },
+          {
+            "timestamp": 2400,
+            "description": "アウェイ#8のミドルシュートがポスト直撃",
+            "importance": 0.8,
+            "type": "chance"
+          },
+          {
+            "timestamp": 4500,
+            "description": "ホームのPKをアウェイGKが驚異的なセーブで阻止",
+            "importance": 0.95,
+            "type": "save"
+          }
+        ],
+        "playerHighlights": [
+          {
+            "player": "GK",
+            "team": "away",
+            "achievement": "PKストップを含む複数のビッグセーブ"
+          },
+          {
+            "player": "GK",
+            "team": "home",
+            "achievement": "安定したセービングでゴールを死守"
+          },
+          {
+            "player": "#8",
+            "jerseyNumber": 8,
+            "team": "away",
+            "achievement": "中盤で存在感を示し、惜しいミドルシュートも"
+          }
+        ],
+        "score": {
+          "home": 0,
+          "away": 0
+        },
+        "mvp": {
+          "player": "GK",
+          "team": "away",
+          "achievement": "PKストップを含む神懸かり的なセーブでチームを救った"
+        }
+      }
+    },
+    {
+      "scenario": "フットサルの試合、ホームが5-3で勝利",
+      "output": {
+        "headline": "ホームが5得点の猛攻！点の取り合いを制す",
+        "narrative": {
+          "firstHalf": "序盤からオープンな展開。ホームの#10が立て続けに2ゴールを奪い主導権を握る。アウェイも#7のピヴォ当てから1点を返し、前半は2-1で折り返し。",
+          "secondHalf": "後半も打ち合いが続く。ホームが#3、#10（ハットトリック）、#5のゴールで3点を追加。アウェイもパワープレーから2点を返したが届かず、5-3でホームが勝利。",
+          "overall": "ホームの#10がハットトリックの大活躍。両チームとも攻撃的なフットサルを展開した見応えある試合だった。"
+        },
+        "keyMoments": [
+          {
+            "timestamp": 180,
+            "description": "ホーム#10がカウンターから先制点",
+            "importance": 0.8,
+            "type": "goal"
+          },
+          {
+            "timestamp": 420,
+            "description": "ホーム#10が個人技でハットトリック達成",
+            "importance": 0.95,
+            "type": "goal"
+          },
+          {
+            "timestamp": 1080,
+            "description": "アウェイがパワープレーから追い上げるも時間切れ",
+            "importance": 0.7,
+            "type": "goal"
+          }
+        ],
+        "playerHighlights": [
+          {
+            "player": "#10",
+            "jerseyNumber": 10,
+            "team": "home",
+            "achievement": "ハットトリック達成、チームを勝利に導く"
+          },
+          {
+            "player": "#7",
+            "jerseyNumber": 7,
+            "team": "away",
+            "achievement": "2ゴール、最後まで諦めない姿勢を見せた"
+          }
+        ],
+        "score": {
+          "home": 5,
+          "away": 3
+        },
+        "mvp": {
+          "player": "#10",
+          "team": "home",
+          "achievement": "ハットトリックで試合を決定づけた"
+        }
+      }
+    }
+  ],
   "output_schema": {
-    "headline": "string",
+    "headline": "string (15-30文字程度の印象的な見出し)",
     "narrative": {
-      "firstHalf": "string",
-      "secondHalf": "string",
-      "overall": "string (optional)"
+      "firstHalf": "string (100-200文字程度)",
+      "secondHalf": "string (100-200文字程度)",
+      "overall": "string (50-100文字程度、オプション)"
     },
     "keyMoments": [
       {
         "timestamp": "number (seconds)",
-        "description": "string",
+        "description": "string (30-50文字程度)",
         "importance": "number (0.0-1.0)",
         "type": "goal | chance | save | foul | substitution | tactical_change | other"
       }
     ],
     "playerHighlights": [
       {
-        "player": "string (jersey number or description)",
+        "player": "string (jersey number like #10 or position)",
         "jerseyNumber": "number (optional)",
         "team": "home | away",
-        "achievement": "string"
+        "achievement": "string (具体的な成果)"
       }
     ],
     "score": {
@@ -34,5 +208,64 @@
       "team": "home | away",
       "achievement": "string"
     }
+  },
+  "guidelines": {
+    "headline_tips": [
+      "結果が分かる場合は結果を含める（例：「劇的逆転勝利」「激闘ドロー」）",
+      "印象的な出来事を強調（例：「ハットトリック達成」「GKが大活躍」）",
+      "感情を込めた表現を使う（例：「白熱」「熱戦」「大一番」）"
+    ],
+    "narrative_tips": [
+      "時系列で流れを説明する",
+      "重要な場面は具体的に（誰が、何をしたか）",
+      "攻守のバランスや試合の雰囲気を伝える"
+    ],
+    "importance_scale": {
+      "1.0": "試合を決定づけた瞬間（決勝ゴール、試合終了直前の同点弾など）",
+      "0.8-0.9": "非常に重要な場面（ゴール、PKストップなど）",
+      "0.6-0.7": "重要な場面（ビッグセーブ、決定機、退場など）",
+      "0.4-0.5": "やや重要な場面（危険な場面、交代など）",
+      "0.4未満": "通常は記録しない"
+    },
+    "mvp_criteria": [
+      "最も試合に影響を与えた選手",
+      "ゴール・アシストの数だけでなく、守備貢献も考慮",
+      "試合の流れを変えた選手を優先"
+    ]
+  },
+  "edge_cases": {
+    "description": "試合サマリー生成における境界ケースの対処法",
+    "cases": [
+      {
+        "scenario": "得点が検出できない場合",
+        "guidance": "スコアが不明な場合はscoreフィールドを省略するか、null値を設定。ヘッドラインでは「熱戦」「好ゲーム」など結果に依存しない表現を使用。",
+        "example": "headline: '両チーム一歩も譲らぬ熱戦'"
+      },
+      {
+        "scenario": "選手の背番号が読めない場合",
+        "guidance": "背番号が不明な場合は位置情報で表現（例：「#? (右サイドの選手)」「GK」「FW」）。playerHighlightsでも同様。"
+      },
+      {
+        "scenario": "片方のチームの情報が少ない場合",
+        "guidance": "情報が偏っている場合はその旨をnarrativeで言及。playerHighlightsは見えた選手のみ記載。"
+      },
+      {
+        "scenario": "試合時間が短い/長い場合",
+        "guidance": "フットサル（20分ハーフ）や延長戦は時間に合わせてnarrativeを調整。keyMomentsのタイムスタンプは実際の秒数を使用。"
+      },
+      {
+        "scenario": "MVPの選出が難しい場合",
+        "guidance": "目立った選手がいない場合は、チーム全体のパフォーマンスを称える形でmvpを省略するか、最も出場時間が長く安定していた選手を選出。"
+      },
+      {
+        "scenario": "映像が試合の一部のみ",
+        "guidance": "前半のみ、後半のみの映像の場合は、見えている時間帯のみでサマリーを作成。narrativeでは「（後半の映像）」等と明記。",
+        "example": "firstHalf: '映像なし', secondHalf: '後半開始から...'（後半のみの場合）"
+      },
+      {
+        "scenario": "練習試合・紅白戦の場合",
+        "guidance": "正式な試合でない場合でも同様の形式でサマリーを作成。headlineやnarrativeで「練習試合」「紅白戦」と明記。"
+      }
+    ]
   }
 }

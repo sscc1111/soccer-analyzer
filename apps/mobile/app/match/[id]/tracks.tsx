@@ -33,7 +33,10 @@ import type { TrackDoc, TrackPlayerMapping } from "@soccer/shared";
  * Unconfirmed tracks (source !== 'manual') are highlighted for review.
  */
 export default function TracksScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string }>();
+  // Normalize id to string | null (useLocalSearchParams can return string | string[] | undefined)
+  const id = Array.isArray(params.id) ? params.id[0] : params.id ?? null;
+
   const { match, loading: matchLoading } = useMatch(id);
   const {
     tracks,
@@ -42,6 +45,7 @@ export default function TracksScreen() {
     error,
     confirmedCount,
     needsReviewCount,
+    refetch,
   } = useTracks(id);
 
   const [saving, setSaving] = useState(false);
@@ -148,7 +152,7 @@ export default function TracksScreen() {
         <Text className="text-destructive text-center mb-4">
           Error loading tracks: {error.message}
         </Text>
-        <Button onPress={() => {}}>Retry</Button>
+        <Button onPress={refetch}>Retry</Button>
       </View>
     );
   }
@@ -257,12 +261,12 @@ export default function TracksScreen() {
                               </View>
 
                               <Text className="text-muted-foreground text-sm">
-                                {track.frames.length} frames • {" "}
-                                {Math.round(track.avgConfidence * 100)}% confidence
+                                {(track as any)._frameCount ?? track.frames?.length ?? 0} frames • {" "}
+                                {Math.round((track.avgConfidence ?? 0) * 100)}% confidence
                               </Text>
 
                               <Text className="text-muted-foreground text-xs">
-                                {(track.endTime - track.startTime).toFixed(1)}s duration
+                                {((track.endTime ?? 0) - (track.startTime ?? 0)).toFixed(1)}s duration
                               </Text>
                             </View>
 
@@ -303,8 +307,8 @@ export default function TracksScreen() {
               Track: {selectedTrack.trackId.slice(0, 12)}...
             </Text>
             <Text className="text-muted-foreground text-sm mb-4">
-              {selectedTrack.frames.length} frames • {" "}
-              {(selectedTrack.endTime - selectedTrack.startTime).toFixed(1)}s duration
+              {(selectedTrack as any)._frameCount ?? selectedTrack.frames?.length ?? 0} frames • {" "}
+              {((selectedTrack.endTime ?? 0) - (selectedTrack.startTime ?? 0)).toFixed(1)}s duration
             </Text>
 
             {/* Jersey Number Input */}

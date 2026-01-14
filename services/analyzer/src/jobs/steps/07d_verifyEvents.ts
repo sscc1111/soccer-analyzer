@@ -86,8 +86,9 @@ export async function stepVerifyEvents(
   const db = getDb();
   const matchRef = db.collection("matches").doc(matchId);
 
-  // Check if cache is available
-  const cache = await getValidCacheOrFallback(matchId);
+  // Check if cache is available - verification requires actual context cache, not fallback
+  // Phase 3.1: Pass step name for cache hit/miss tracking
+  const cache = await getValidCacheOrFallback(matchId, "verify_events");
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot verify events", { matchId });
     return {
@@ -98,6 +99,21 @@ export async function stepVerifyEvents(
       modified: 0,
       skipped: true,
       error: "No video file URI available",
+    };
+  }
+
+  // Skip verification if using fallback (no actual context cache)
+  // Verification requires context caching for efficient re-analysis
+  if (cache.version === "fallback") {
+    stepLogger.info("Skipping event verification - no context cache available (fallback mode)", { matchId });
+    return {
+      matchId,
+      totalVerified: 0,
+      confirmed: 0,
+      rejected: 0,
+      modified: 0,
+      skipped: true,
+      error: "Context caching not available for verification",
     };
   }
 

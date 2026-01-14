@@ -10,8 +10,8 @@ import path from "node:path";
 import { z } from "zod";
 import type { ImportantSceneDoc, SceneType, SceneTeam } from "@soccer/shared";
 import { getDb } from "../../firebase/admin";
-import { getCacheManager, type GeminiCacheDoc } from "../../gemini/cacheManager";
-import { callGeminiApi, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
+import { getValidCacheOrFallback, getCacheManager, type GeminiCacheDoc } from "../../gemini/cacheManager";
+import { callGeminiApi, callGeminiApiWithCache, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
 import { defaultLogger as logger, ILogger } from "../../lib/logger";
 import { withRetry } from "../../lib/retry";
 
@@ -99,19 +99,25 @@ export async function stepExtractImportantScenes(
     };
   }
 
-  // Get cache info
-  const cacheManager = getCacheManager();
-  const cache = await cacheManager.getValidCache(matchId);
+  // Get cache info (with fallback to direct file URI)
+  // Phase 3.1: Pass step name for cache hit/miss tracking
+  const cache = await getValidCacheOrFallback(matchId, "extract_important_scenes");
 
   if (!cache) {
-    stepLogger.warn("No valid cache found, skipping scene extraction", { matchId });
+    stepLogger.warn("No valid cache or file URI found, skipping scene extraction", { matchId });
     return {
       matchId,
       sceneCount: 0,
       skipped: true,
-      error: "No valid Gemini cache available",
+      error: "No video file URI available",
     };
   }
+
+  stepLogger.info("Using video for scene extraction", {
+    matchId,
+    fileUri: cache.storageUri || cache.fileUri,
+    hasCaching: cache.version !== "fallback",
+  });
 
   // Load prompt
   const prompt = await loadPrompt();
@@ -154,8 +160,10 @@ export async function stepExtractImportantScenes(
 
   await batch.commit();
 
-  // Update cache usage
-  await cacheManager.updateCacheUsage(matchId);
+  // Update cache usage if using actual cache (not fallback)
+  if (cache.version !== "fallback") {
+    await getCacheManager().updateCacheUsage(matchId);
+  }
 
   stepLogger.info("Scene extraction complete", {
     matchId,
@@ -212,37 +220,58 @@ async function extractScenesWithGemini(
     "Return JSON only.",
   ].join("\n");
 
+  // Phase 3: Use context caching for cost reduction
+  const useCache = cache.cacheId && cache.version !== "fallback";
+
   log.info("calling Gemini for scene extraction", {
     cacheId: cache.cacheId,
     fileUri: cache.storageUri || cache.fileUri,
     model: modelId,
+    useCache,
   });
+
+  const generationConfig = {
+    temperature: 0.3,
+    maxOutputTokens: 8192,
+    responseMimeType: "application/json",
+  };
 
   return withRetry(
     async () => {
-      const request: Gemini3Request = {
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                fileData: {
-                  fileUri: cache.storageUri || cache.fileUri || "",
-                  mimeType: "video/mp4",
-                },
-              },
-              { text: promptText },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 8192,
-          responseMimeType: "application/json",
-        },
-      };
+      let response;
 
-      const response = await callGeminiApi(projectId, modelId, request, { matchId, step: "extract_important_scenes" });
+      if (useCache) {
+        // Use cached content for ~84% cost savings
+        response = await callGeminiApiWithCache(
+          projectId,
+          modelId,
+          cache.cacheId,
+          promptText,
+          generationConfig,
+          { matchId, step: "extract_important_scenes" }
+        );
+      } else {
+        // Fallback to direct file URI when cache not available
+        const request: Gemini3Request = {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  fileData: {
+                    fileUri: cache.storageUri || cache.fileUri || "",
+                    mimeType: "video/mp4",
+                  },
+                },
+                { text: promptText },
+              ],
+            },
+          ],
+          generationConfig,
+        };
+        response = await callGeminiApi(projectId, modelId, request, { matchId, step: "extract_important_scenes" });
+      }
+
       const text = extractTextFromResponse(response);
 
       // Parse and validate response

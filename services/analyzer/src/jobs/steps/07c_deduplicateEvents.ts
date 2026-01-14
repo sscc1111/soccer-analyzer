@@ -33,6 +33,8 @@ export type DeduplicateEventsOptions = {
   rawEvents: RawEvent[];
   /** Optional deduplication configuration */
   config?: Partial<DeduplicationConfig>;
+  /** Video FPS for frame number calculation (default: 30) */
+  fps?: number;
   logger?: ILogger;
 };
 
@@ -67,6 +69,7 @@ export async function stepDeduplicateEvents(
   options: DeduplicateEventsOptions
 ): Promise<DeduplicateEventsResult> {
   const { matchId, version, rawEvents } = options;
+  const fps = options.fps ?? 30; // Default to 30fps if not provided
   const log = options.logger ?? logger;
   const stepLogger = log.child ? log.child({ step: "deduplicate_events" }) : log;
 
@@ -155,7 +158,7 @@ export async function stepDeduplicateEvents(
       eventId: `${matchId}_pass_${i}`,
       matchId,
       type: "pass",
-      frameNumber: Math.floor(e.absoluteTimestamp * 30), // Assume 30fps
+      frameNumber: Math.floor(e.absoluteTimestamp * fps),
       timestamp: e.absoluteTimestamp,
       kicker: {
         trackId: "",
@@ -195,8 +198,8 @@ export async function stepDeduplicateEvents(
       trackId: "",
       playerId: e.player || null,
       teamId: e.team as TeamId,
-      startFrame: Math.floor(e.absoluteTimestamp * 30),
-      endFrame: Math.floor(e.absoluteTimestamp * 30) + 30, // Assume 1 second duration
+      startFrame: Math.floor(e.absoluteTimestamp * fps),
+      endFrame: Math.floor(e.absoluteTimestamp * fps) + fps, // Assume 1 second duration
       startTime: e.absoluteTimestamp,
       endTime: e.absoluteTimestamp + 1,
       startPosition: { x: 0, y: 0 },
@@ -219,7 +222,7 @@ export async function stepDeduplicateEvents(
       matchId,
       type: "turnover",
       turnoverType: "lost",
-      frameNumber: Math.floor(e.absoluteTimestamp * 30),
+      frameNumber: Math.floor(e.absoluteTimestamp * fps),
       timestamp: e.absoluteTimestamp,
       player: {
         trackId: "",

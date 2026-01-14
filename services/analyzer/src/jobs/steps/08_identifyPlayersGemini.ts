@@ -8,7 +8,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { callGeminiApi, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
+import { callGeminiApi, callGeminiApiWithCache, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
 import type { TrackTeamMeta, TrackPlayerMapping, TeamId, GameFormat } from "@soccer/shared";
 import { GAME_FORMAT_INFO } from "@soccer/shared";
 import { getDb } from "../../firebase/admin";
@@ -103,7 +103,8 @@ export async function stepIdentifyPlayersGemini(
   }
 
   // Get cache info (with fallback to direct file URI)
-  const cache = await getValidCacheOrFallback(matchId);
+  // Phase 3.1: Pass step name for cache hit/miss tracking
+  const cache = await getValidCacheOrFallback(matchId, "identify_players_gemini");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot identify players", { matchId });
@@ -288,32 +289,50 @@ async function identifyPlayersWithGemini(
     "Return JSON only.",
   ].join("\n");
 
+  // Phase 3: Use context caching for cost reduction
+  const useCache = cache.cacheId && cache.version !== "fallback";
+  const generationConfig = {
+    temperature: 0.2,
+    responseMimeType: "application/json",
+  };
+
   return withRetry(
     async () => {
-      const request: Gemini3Request = {
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                fileData: {
-                  fileUri: cache.storageUri || cache.fileUri || "",
-                  mimeType: "video/mp4",
+      let response;
+
+      if (useCache) {
+        // Use cached content for ~84% cost savings
+        response = await callGeminiApiWithCache(
+          projectId,
+          modelId,
+          cache.cacheId,
+          promptText,
+          generationConfig,
+          { matchId, step: "identify_players_gemini" }
+        );
+      } else {
+        // Fallback to direct file URI when cache not available
+        const request: Gemini3Request = {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  fileData: {
+                    fileUri: cache.storageUri || cache.fileUri || "",
+                    mimeType: "video/mp4",
+                  },
                 },
-              },
-              { text: promptText },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: "application/json",
-        },
-      };
+                { text: promptText },
+              ],
+            },
+          ],
+          generationConfig,
+        };
+        response = await callGeminiApi(projectId, modelId, request, { matchId, step: "identify_players_gemini" });
+      }
 
-      const response = await callGeminiApi(projectId, modelId, request, { matchId, step: "identify_players_gemini" });
       const text = extractTextFromResponse(response);
-
       const parsed = JSON.parse(text);
       return PlayersResponseSchema.parse(parsed);
     },

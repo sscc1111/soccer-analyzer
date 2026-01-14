@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Card, CardContent, Badge } from "../../../components/ui";
-import { useClips } from "../../../lib/hooks";
+import { useClips, useMatch } from "../../../lib/hooks";
 import type { ClipDoc, EventLabel } from "@soccer/shared";
 
 const FILTER_LABELS: (EventLabel | "all")[] = [
@@ -110,8 +110,13 @@ export default function ClipsListScreen() {
     (initialFilter as EventLabel) || "all"
   );
 
+  // Get match to access activeVersion
+  const { match } = useMatch(id);
+  const activeVersion = match?.analysis?.activeVersion;
+
   const { clips, loading, error } = useClips(id, {
     label: filter === "all" ? undefined : filter,
+    version: activeVersion,
   });
 
   const renderItem = useCallback(

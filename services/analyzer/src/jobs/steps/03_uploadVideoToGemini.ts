@@ -17,6 +17,7 @@ import {
   getCacheManager,
   isContextCachingEnabled,
   getCacheTtlSeconds,
+  calculateDynamicTtl,
   type GeminiCacheDoc,
 } from "../../gemini/cacheManager";
 import { defaultLogger as logger } from "../../lib/logger";
@@ -129,7 +130,9 @@ export async function stepUploadVideoToGemini({
 
   // 6. Create or get context cache
   const cacheManager = getCacheManager();
-  const ttlSeconds = getCacheTtlSeconds();
+  // Phase 3.1: Use dynamic TTL based on video duration
+  const durationSec = match?.video?.durationSec;
+  const ttlSeconds = durationSec ? calculateDynamicTtl(durationSec) : getCacheTtlSeconds();
 
   let cacheDoc: GeminiCacheDoc;
   try {

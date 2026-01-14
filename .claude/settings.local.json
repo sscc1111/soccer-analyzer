@@ -16,7 +16,8 @@
       "Bash(./infra/verify-deployment-config.sh:*)",
       "Bash(pnpm:*)",
       "Bash(gcloud builds submit:*)",
-      "Bash(gcloud run deploy:*)"
+      "Bash(gcloud run deploy:*)",
+      "Bash(gcloud logging read:*)"
     ],
     "deny": [],
     "ask": []

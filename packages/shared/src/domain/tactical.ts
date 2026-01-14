@@ -56,6 +56,8 @@ export type KeyMoment = {
   description: string;
   importance: number;
   type?: "goal" | "chance" | "save" | "foul" | "substitution" | "tactical_change" | "other";
+  /** Reference to clip document for video playback */
+  clipId?: string | null;
 };
 
 /**

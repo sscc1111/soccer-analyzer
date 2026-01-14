@@ -1,6 +1,175 @@
 {
   "version": "v3",
   "task": "Detect tactical events from a soccer match video with AGGRESSIVE shot detection. Prioritize catching all potential shots even in difficult video conditions.",
+  "examples": [
+    {
+      "scenario": "選手がペナルティエリア内で強くボールを蹴り、キーパーが横っ飛びでセーブ",
+      "output": {
+        "timestamp": 45.3,
+        "type": "shot",
+        "team": "home",
+        "player": "#10",
+        "zone": "attacking_third",
+        "details": {
+          "shotResult": "saved",
+          "shotType": "power"
+        },
+        "confidence": 0.95,
+        "visualEvidence": "ペナルティエリア内での強いキック動作、ボールがゴール方向へ、キーパーが横っ飛びでセーブ"
+      }
+    },
+    {
+      "scenario": "ミドルレンジからのシュートがポストに当たる",
+      "output": {
+        "timestamp": 72.1,
+        "type": "shot",
+        "team": "away",
+        "player": "#8",
+        "zone": "attacking_third",
+        "details": {
+          "shotResult": "post",
+          "shotType": "long_range"
+        },
+        "confidence": 0.85,
+        "visualEvidence": "約25m地点からの強いキック、ボールがポストを直撃して跳ね返る"
+      }
+    },
+    {
+      "scenario": "遠目からの強いキック、結果が不明確だがゴール方向",
+      "output": {
+        "timestamp": 88.5,
+        "type": "shot",
+        "team": "home",
+        "player": "#7",
+        "zone": "middle_third",
+        "details": {
+          "shotResult": "missed",
+          "shotType": "long_range"
+        },
+        "confidence": 0.4,
+        "visualEvidence": "ペナルティエリア手前での強いキック動作、ボールの行方は不明確だが選手ががっかりしている"
+      },
+      "note": "信頼度が低くても、シュートの可能性があれば0.3以上で報告する"
+    },
+    {
+      "scenario": "短いパスが味方に渡る",
+      "output": {
+        "timestamp": 12.5,
+        "type": "pass",
+        "team": "home",
+        "player": "#4",
+        "zone": "defensive_third",
+        "details": {
+          "passType": "short",
+          "outcome": "complete",
+          "targetPlayer": "#6"
+        },
+        "confidence": 0.9,
+        "visualEvidence": "DFラインでの横パス、#4から#6へ約5mのパスが通る"
+      }
+    },
+    {
+      "scenario": "クロスボールが相手にインターセプトされる",
+      "output": {
+        "timestamp": 34.2,
+        "type": "pass",
+        "team": "away",
+        "player": "#11",
+        "zone": "attacking_third",
+        "details": {
+          "passType": "cross",
+          "outcome": "intercepted",
+          "targetPlayer": "#9"
+        },
+        "confidence": 0.85,
+        "visualEvidence": "サイドからペナルティエリアへのクロス、相手DFがヘディングでクリア"
+      },
+      "note": "クロスはシュートではない。ゴール方向への強いキックがシュート"
+    },
+    {
+      "scenario": "大きくクリアされたボール（シュートではない例）",
+      "negative_example": true,
+      "wrong_interpretation": {
+        "type": "shot",
+        "reason": "強いキックだからシュートと誤認"
+      },
+      "correct_output": {
+        "timestamp": 56.8,
+        "type": "pass",
+        "team": "home",
+        "player": "#3",
+        "zone": "defensive_third",
+        "details": {
+          "passType": "long",
+          "outcome": "incomplete"
+        },
+        "confidence": 0.8,
+        "visualEvidence": "自陣ペナルティエリアからの大きなクリア、ボールは前方の無人エリアへ"
+      },
+      "note": "守備的なクリアはゴールを狙っていないのでシュートではない"
+    },
+    {
+      "scenario": "選手がドリブルで相手を抜く",
+      "output": {
+        "timestamp": 23.7,
+        "type": "carry",
+        "team": "away",
+        "player": "#10",
+        "zone": "middle_third",
+        "details": {
+          "distance": 15,
+          "endReason": "pass"
+        },
+        "confidence": 0.88,
+        "visualEvidence": "中盤で#10がボールを持ちながら約15m前進、相手を1人かわしてパス"
+      }
+    },
+    {
+      "scenario": "タックルでボールを奪う",
+      "output": {
+        "timestamp": 67.4,
+        "type": "turnover",
+        "team": "home",
+        "player": "#6",
+        "zone": "middle_third",
+        "details": {
+          "turnoverType": "tackle"
+        },
+        "confidence": 0.9,
+        "visualEvidence": "スライディングタックルでボール奪取、ボールがホームチームに渡る"
+      }
+    },
+    {
+      "scenario": "コーナーキックの場面",
+      "output": {
+        "timestamp": 78.2,
+        "type": "setPiece",
+        "team": "away",
+        "player": "#7",
+        "zone": "attacking_third",
+        "details": {
+          "setPieceType": "corner"
+        },
+        "confidence": 0.95,
+        "visualEvidence": "コーナーフラッグ付近からのキック、ボールがペナルティエリアへ"
+      }
+    },
+    {
+      "scenario": "スローインからゲーム再開",
+      "output": {
+        "timestamp": 91.0,
+        "type": "setPiece",
+        "team": "home",
+        "player": "#2",
+        "zone": "middle_third",
+        "details": {
+          "setPieceType": "throw_in"
+        },
+        "confidence": 0.85,
+        "visualEvidence": "タッチラインからボールを両手で投げ入れる動作"
+      }
+    }
+  ],
   "instructions": "この試合動画から、以下のイベントを検出してください。\n\n## 重要: シュート検出の優先度\n\nこのプロンプトでは**シュート検出を最優先**します。不確かでも、シュートの可能性があれば報告してください。\n\n---\n\n## 検出対象と視覚的指標\n\n### 1. パス (pass)\nボールが選手間で意図的に移動するプレイ。\n\n**視覚的指標:**\n- 選手の足がボールを蹴る動作が見える\n- ボールが空中または地面を移動する\n- 別の選手（味方または相手）がボールに接触する\n\n**パスタイプの定義:**\n- short: 10m未満（近くの味方へ）\n- medium: 10-25m（中距離パス）\n- long: 25m以上（ロングボール）\n- through: 守備ラインの裏へ通すパス\n- cross: サイドからペナルティエリアへのクロス\n\n**結果の判定:**\n- complete: 味方選手がボールを受け取った\n- incomplete: ボールがラインを割った、または誰も触れなかった\n- intercepted: 相手選手がボールを奪取した\n\n### 2. キャリー (carry)\n選手がボールを保持しながら移動するプレイ。\n\n**視覚的指標:**\n- 選手がボールを足元に置いて移動している\n- ボールが選手から約2m以内を維持\n- 複数回のタッチまたは連続的な接触が見える\n\n**検出条件:**\n- 最小時間: 1秒以上\n- 最小距離: 5m以上（推定）\n\n### 3. ターンオーバー (turnover)\nチーム間でボール所持が変わる瞬間。\n\n**視覚的指標:**\n- tackle: 守備選手の足がボールに接触し、ボールの方向が変わる\n- interception: パスが相手選手に渡る\n- bad_touch: コントロールミスでボールが相手に渡る\n- out_of_bounds: ボールがラインを割り、相手チームのボールになる\n\n---\n\n## ★★★ シュート (shot) - 最重要 ★★★\n\nゴールを狙った攻撃的なプレイ。**不確かでも報告すること。**\n\n### 明確なシュートの視覚的指標（高信頼度）:\n- ペナルティエリア内からの強いキック\n- ボールがゴール方向に飛んでいる\n- ゴールキーパーが飛び込んでいる/反応している\n- 選手の体全体がゴールに向いてスイングしている\n\n### 曖昧だがシュートの可能性がある指標（低信頼度で報告）:\n- ペナルティエリア付近での強いキック動作\n- ボールが急に視界から消える（ゴール方向へ飛んだ可能性）\n- 選手が大きく足を振り上げている\n- キーパーが急に動いた/ジャンプした\n- 周囲の選手が「見守る」姿勢になっている\n- ボールが高く上がった（ループシュートの可能性）\n- ゴールネットが揺れた\n- 選手が喜んでいる/がっかりしている反応\n- バーやポストに当たった音や反応\n\n### シュートと判断すべき場面:\n1. ペナルティエリア内で選手がボールを蹴った → **シュートの可能性大**\n2. ゴール前でボールが消えた → **シュートの可能性あり**\n3. キーパーがセーブ動作をした → **シュートあり**\n4. ゴールキックになった（相手チーム） → **シュートがあった証拠**\n5. 選手が悔しがっている → **シュートを外した可能性**\n\n### シュートの結果の判定:\n- goal: ゴールラインを越えた、または選手が祝っている\n- saved: キーパーが触れた/止めた\n- blocked: フィールドプレイヤーがブロックした\n- missed: ゴール枠を外れた（ワイド、バー上、バー）\n- post: ポストまたはバーに当たった\n\n### シュートの信頼度ガイドライン（特別基準）:\n| 信頼度 | 条件 |\n|--------|------|\n| 0.9-1.0 | シュート動作、ボール軌道、結果がすべて明確 |\n| 0.7-0.9 | シュート動作は見えるが、結果が不明確 |\n| 0.5-0.7 | 強いキック動作があり、ゴール方向の可能性 |\n| 0.3-0.5 | **報告する**: ペナルティエリア付近の強いキック |\n| 0.3未満 | 報告しない |\n\n**重要**: シュートは0.3以上で報告してください（他のイベントは0.5以上）\n\n---\n\n## 5. セットピース (setPiece)\n試合の再開プレイ。\n\n**タイプ:**\n- corner: コーナーキック\n- free_kick: フリーキック\n- penalty: ペナルティキック\n- throw_in: スローイン\n\n---\n\n## 信頼度ガイドライン（シュート以外）\n\n| 信頼度 | 条件 |\n|--------|------|\n| 0.9-1.0 | 蹴り手、ボール軌道、受け手がすべて明確 |\n| 0.7-0.9 | 一部遮蔽があるが、ボール軌道は明確 |\n| 0.5-0.7 | 選手位置とボール出現位置から推測できる |\n| 0.5未満 | **報告しない**（シュート以外） |\n\n---\n\n## 動画品質が悪い場合の対応\n\n以下の場合でも、**シュートの可能性**があれば報告してください：\n- カメラが揺れている\n- 解像度が低い\n- 選手が重なって見えにくい\n- ボールが見えにくい\n\nこれらの場合は信頼度を下げて（0.3-0.5）報告してください。\n\n---\n\n## 検出対象外\n\n以下は検出しないでください：\n- リプレイ映像（スローモーション再生）\n- ハーフタイム、試合終了後の映像\n- ウォームアップ、練習シーン\n\n---\n\n## 注意事項\n\n- タイムスタンプは秒単位（小数点以下1桁）\n- team は home（ホーム）または away（アウェイ）で識別\n- player は背番号（#10など）または位置で識別\n- 各イベントには必ず visualEvidence を記載（何を見て判断したか）\n- **シュートは積極的に報告すること**",
   "output_schema": {
     "metadata": {
@@ -29,6 +198,55 @@
         },
         "confidence": "number (0.3-1.0 for shots, 0.5-1.0 for others)",
         "visualEvidence": "string (brief description of what you observed to detect this event)"
+      }
+    ]
+  },
+  "edge_cases": {
+    "description": "判断が難しい境界ケースの明確化",
+    "cases": [
+      {
+        "scenario": "クロスとシュートの区別",
+        "is_shot": false,
+        "guidance": "サイドからペナルティエリアへボールを送る場合は'pass'（cross）。ゴールを直接狙っている場合のみ'shot'。",
+        "indicators": {
+          "cross": ["サイドからの高いボール", "ペナルティエリア内の味方を狙う", "キーパーが動かない"],
+          "shot": ["ゴール隅を狙う低い軌道", "キーパーが飛び込む", "ゴールネットやポストに向かう"]
+        }
+      },
+      {
+        "scenario": "クリアとロングパスの区別",
+        "guidance": "自陣から危険を回避するためのキックは'pass'（long, incomplete）。ゴール方向への意図的な攻撃は'shot'。",
+        "indicators": {
+          "clearance": ["自陣ペナルティエリアから", "特定の味方を狙っていない", "守備的な状況"],
+          "shot": ["ハーフラインより前から", "ゴール方向への軌道", "攻撃的な姿勢"]
+        }
+      },
+      {
+        "scenario": "ヘディングの分類",
+        "guidance": "ゴールを狙ったヘディングは'shot'。クリアは'pass'。競り合いでどちらの意図も不明な場合はボールの行き先で判断。",
+        "indicators": {
+          "shot": ["ゴール方向", "攻撃的な体勢", "ペナルティエリア内"],
+          "clearance": ["ゴールから離れる方向", "守備的な体勢", "自陣ゴール前"]
+        }
+      },
+      {
+        "scenario": "オウンゴールの可能性",
+        "guidance": "自陣ゴールに入った場合でも、意図的なシュートではないためクリア失敗として'pass'（incomplete）で記録。",
+        "note": "オウンゴールは別途ゴール検出で処理"
+      },
+      {
+        "scenario": "GKのパントキック",
+        "is_shot": false,
+        "guidance": "GKのパントキックやゴールキックは'setPiece'（goal_kick相当）または'pass'（long）。シュートではない。"
+      },
+      {
+        "scenario": "複数イベントが同時発生",
+        "guidance": "同じタイムスタンプ付近で複数のイベントを検出した場合、すべて報告。重複排除は後処理で行う。",
+        "example": "パスを受けてすぐシュート → 'pass'と'shot'の両方を報告"
+      },
+      {
+        "scenario": "映像品質による不確実性",
+        "guidance": "カメラの揺れや低解像度で判断が難しい場合、信頼度を適切に下げて報告。シュートの可能性がある場合は0.3以上で報告。"
       }
     ]
   }

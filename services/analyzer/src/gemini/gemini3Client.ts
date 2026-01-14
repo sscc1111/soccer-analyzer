@@ -41,6 +41,7 @@ export type Gemini3GenerationConfig = {
   responseMimeType?: string;
   topP?: number;
   topK?: number;
+  responseSchema?: Record<string, unknown>; // JSON Schema to enforce output format
 };
 
 export type Gemini3Request = {
