@@ -143,6 +143,7 @@ export async function stepUploadVideoToGemini({
       displayName: `match_${matchId}_video`,
       ttlSeconds,
       systemInstruction: buildSystemInstruction(),
+      videoDurationSec: durationSec,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

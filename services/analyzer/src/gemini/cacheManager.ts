@@ -60,6 +60,7 @@ export type CreateCacheOptions = {
   displayName?: string;
   ttlSeconds?: number;
   systemInstruction?: string;
+  videoDurationSec?: number;
 };
 
 export type CacheManagerConfig = {
@@ -208,6 +209,35 @@ async function vertexAIRequest<T>(
 }
 
 /**
+ * Calculate timeout for cache creation based on video duration
+ *
+ * Cache creation time depends on video length. We use:
+ * - Base: 2 minutes (minimum for any video)
+ * - Per minute of video: 1.5 minutes processing time
+ * - Max: 30 minutes (to prevent infinite waits)
+ *
+ * Examples:
+ * - 1 min video → 2 + 1.5 = 3.5 min timeout
+ * - 5 min video → 2 + 7.5 = 9.5 min timeout
+ * - 20 min video → 2 + 30 = 32 min → capped at 30 min
+ */
+function calculateCacheCreationTimeout(videoDurationSec?: number): number {
+  const BASE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+  const PER_MINUTE_TIMEOUT_MS = 1.5 * 60 * 1000; // 1.5 minutes per video minute
+  const MAX_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes max
+
+  if (!videoDurationSec || videoDurationSec <= 0) {
+    // Default to 10 minutes if duration unknown
+    return 10 * 60 * 1000;
+  }
+
+  const videoDurationMin = videoDurationSec / 60;
+  const calculatedTimeout = BASE_TIMEOUT_MS + videoDurationMin * PER_MINUTE_TIMEOUT_MS;
+
+  return Math.min(calculatedTimeout, MAX_TIMEOUT_MS);
+}
+
+/**
  * Create actual context cache using Vertex AI API
  */
 async function createActualCache(
@@ -218,7 +248,8 @@ async function createActualCache(
   mimeType: string,
   ttlSeconds: number,
   displayName: string,
-  systemInstruction?: string
+  systemInstruction?: string,
+  videoDurationSec?: number
 ): Promise<{ name: string; expireTime: string }> {
   const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/cachedContents`;
 
@@ -248,6 +279,9 @@ async function createActualCache(
     };
   }
 
+  // Calculate timeout based on video duration
+  const timeoutMs = calculateCacheCreationTimeout(videoDurationSec);
+
   logger.info("Creating Vertex AI context cache", {
     projectId,
     location,
@@ -255,15 +289,15 @@ async function createActualCache(
     fileUri,
     ttlSeconds,
     displayName,
+    videoDurationSec,
+    timeoutMs,
   });
 
-  // Use longer timeout for cache creation (5 minutes) as video processing takes time
-  const CACHE_CREATION_TIMEOUT_MS = 300000;
   const response = await vertexAIRequest<CreateCachedContentResponse>(
     url,
     "POST",
     requestBody,
-    CACHE_CREATION_TIMEOUT_MS
+    timeoutMs
   );
 
   logger.info("Vertex AI context cache created successfully", {
@@ -392,7 +426,7 @@ export class GeminiCacheManager {
    * Otherwise, a new cache will be created.
    */
   async getOrCreateCache(options: CreateCacheOptions): Promise<GeminiCacheDoc> {
-    const { matchId, fileUri, mimeType, displayName, ttlSeconds, systemInstruction } =
+    const { matchId, fileUri, mimeType, displayName, ttlSeconds, systemInstruction, videoDurationSec } =
       options;
 
     // Check for existing valid cache
@@ -417,6 +451,7 @@ export class GeminiCacheManager {
       displayName,
       ttlSeconds: ttlSeconds || this.config.defaultTtlSeconds,
       systemInstruction,
+      videoDurationSec,
     });
 
     return newCache;
@@ -434,8 +469,14 @@ export class GeminiCacheManager {
    * parameter in generateContent calls for 90% cost reduction.
    */
   async createCache(options: CreateCacheOptions): Promise<GeminiCacheDoc> {
-    const { matchId, fileUri, mimeType, ttlSeconds = this.config.defaultTtlSeconds, systemInstruction } =
-      options;
+    const {
+      matchId,
+      fileUri,
+      mimeType,
+      ttlSeconds = this.config.defaultTtlSeconds,
+      systemInstruction,
+      videoDurationSec,
+    } = options;
 
     const displayName = options.displayName || `match_${matchId}_video`;
     const now = new Date();
@@ -446,6 +487,7 @@ export class GeminiCacheManager {
       mimeType,
       ttlSeconds,
       displayName,
+      videoDurationSec,
     });
 
     // Call actual Vertex AI API to create cache
@@ -457,7 +499,8 @@ export class GeminiCacheManager {
       mimeType,
       ttlSeconds,
       displayName,
-      systemInstruction
+      systemInstruction,
+      videoDurationSec
     );
 
     const cacheDoc: GeminiCacheDoc = {
