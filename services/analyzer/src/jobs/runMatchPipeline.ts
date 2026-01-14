@@ -24,6 +24,14 @@ import { stepDetectBall } from "./steps/09_detectBall";
 import { stepDetectEvents } from "./steps/10_detectEvents";
 import { stepGenerateTacticalInsights } from "./steps/10_generateTacticalInsights";
 import { stepGenerateMatchSummary } from "./steps/11_generateMatchSummary";
+// New consolidated analysis steps (Call 1 + Call 2 architecture)
+import { stepComprehensiveAnalysis } from "./steps/04_comprehensiveAnalysis";
+import { stepSummaryAndTactics } from "./steps/05_summaryAndTactics";
+// Hybrid 4-call pipeline steps
+import { stepSegmentAndEvents } from "./steps/04a_segmentAndEvents";
+import { stepScenesAndPlayers } from "./steps/04b_scenesAndPlayers";
+import { stepLabelClipsHybrid } from "./steps/04c_labelClipsHybrid";
+import { stepSummaryAndTacticsHybrid } from "./steps/04d_summaryAndTacticsHybrid";
 import {
   createYoloPlayerDetector,
   createYoloBallDetector,
@@ -70,6 +78,30 @@ function isMultipassDetectionEnabled(): boolean {
 }
 
 /**
+ * Check if consolidated analysis is enabled
+ * When enabled, uses 2-call architecture:
+ * - Call 1: Comprehensive analysis (segments, events, scenes, players, clipLabels)
+ * - Call 2: Summary and tactics (uses Call 1 results, no video)
+ * This reduces API calls from 20+ to 2, achieving 90%+ cost reduction
+ */
+function isConsolidatedAnalysisEnabled(): boolean {
+  return process.env.USE_CONSOLIDATED_ANALYSIS === "true";
+}
+
+/**
+ * Check if hybrid 4-call pipeline is enabled
+ * When enabled, uses 4-call architecture:
+ * - Call 1: Segments + Events detection (video)
+ * - Call 2: Scenes + Players identification (video, uses Call 1 context)
+ * - Call 3: Clip labeling (video, batch)
+ * - Call 4: Summary + Tactics (text-only)
+ * This balances quality and cost: 4-5 API calls vs 20+ (legacy) or 2 (consolidated)
+ */
+function isHybridPipelineEnabled(): boolean {
+  return process.env.USE_HYBRID_PIPELINE === "true";
+}
+
+/**
  * Create appropriate detectors based on environment configuration
  */
 function createDetectors() {
@@ -102,7 +134,7 @@ const STEP_WEIGHTS: Record<AnalysisStep, number> = {
   detect_shots: 5,
   upload_video_to_gemini: 5,
   extract_clips: 5,
-  // Gemini-first steps (Tier 1 only)
+  // Gemini-first steps (Tier 1 only - legacy multipass)
   extract_important_scenes: 12,
   label_clips: 10,
   build_events: 8,
@@ -113,6 +145,13 @@ const STEP_WEIGHTS: Record<AnalysisStep, number> = {
   classify_teams: 12,
   detect_ball: 18,
   detect_events: 15,
+  // Consolidated analysis steps (2-call architecture)
+  comprehensive_analysis: 55, // Call 1: segments, events, scenes, players, clipLabels
+  summary_and_tactics: 20, // Call 2: tactical + summary (text-only, no video)
+  // Hybrid 4-call pipeline steps
+  segment_and_events: 25, // Hybrid Call 1: segments + events detection
+  scenes_and_players: 20, // Hybrid Call 2: scenes + player identification
+  label_clips_hybrid: 15, // Hybrid Call 3: clip labeling (batch)
   // Final steps (both tiers)
   compute_stats: 5,
   generate_tactical_insights: 8,
@@ -266,6 +305,11 @@ export async function runMatchPipeline({ matchId, jobId, type }: PipelineOptions
 
       // ===== Tier 1: Gemini-first Pipeline =====
       if (isGeminiFirst) {
+        // Check pipeline mode
+        const useHybridPipeline = isHybridPipelineEnabled();
+        const useConsolidatedAnalysis = isConsolidatedAnalysisEnabled();
+        logger.info("Tier 1 pipeline mode", { matchId, useHybridPipeline, useConsolidatedAnalysis });
+
         // Upload video to Gemini with Context Caching
         await startStep("upload_video_to_gemini");
         await runWithRetry("upload_video_to_gemini", () =>
@@ -278,102 +322,153 @@ export async function runMatchPipeline({ matchId, jobId, type }: PipelineOptions
         await runWithRetry("extract_clips", () => stepExtractClips({ matchId, version: runVersion }));
         completeStep("extract_clips");
 
-        // Phase B: Extract important scenes with Gemini
-        await startStep("extract_important_scenes");
-        await runWithRetry("extract_important_scenes", () =>
-          stepExtractImportantScenes({ matchId, version: runVersion })
-        );
-        completeStep("extract_important_scenes");
-
-        // Label clips with Gemini (existing - will use cached context)
-        await startStep("label_clips");
-        await runWithRetry("label_clips", () => stepLabelClipsGemini({ matchId, version: runVersion }));
-        completeStep("label_clips");
-
-        await startStep("build_events");
-        await runWithRetry("build_events", () => stepBuildEvents({ matchId, version: runVersion }));
-        completeStep("build_events");
-
-        // Phase C: Detect events with Gemini
-        await startStep("detect_events_gemini");
-        if (isMultipassDetectionEnabled()) {
-          // Multipass detection: segment -> windowed detection -> deduplication
-          logger.info("Using multipass event detection", { matchId });
-
-          // Step 1: Segment video into active/stoppage/set_piece periods
-          const segmentResult = (await runWithRetry("segment_video", () =>
-            stepSegmentVideo({ matchId, version: runVersion, logger })
-          )) as SegmentVideoResult;
-
-          // Step 2: Detect events in overlapping windows
-          const windowedResult = (await runWithRetry("detect_events_windowed", () =>
-            stepDetectEventsWindowed({
-              matchId,
-              version: runVersion,
-              segments: segmentResult?.segments as VideoSegmentDoc[] ?? [],
-              logger,
-            })
-          )) as DetectEventsWindowedResult;
-
-          // Step 3: Deduplicate and save events
-          await runWithRetry("deduplicate_events", () =>
-            stepDeduplicateEvents({
-              matchId,
-              version: runVersion,
-              rawEvents: windowedResult?.rawEvents ?? [],
-              logger,
-            })
+        if (useHybridPipeline) {
+          // ===== Hybrid 4-Call Pipeline =====
+          // Call 1: Segments + Events detection (video)
+          await startStep("segment_and_events");
+          await runWithRetry("segment_and_events", () =>
+            stepSegmentAndEvents({ matchId, version: runVersion, logger })
           );
+          completeStep("segment_and_events");
 
-          // Step 4: Verify low-confidence events (Phase 4)
-          await runWithRetry("verify_events", () =>
-            stepVerifyEvents({
-              matchId,
-              version: runVersion,
-              logger,
-            })
+          // Call 2: Scenes + Players identification (video, uses Call 1 context)
+          await startStep("scenes_and_players");
+          await runWithRetry("scenes_and_players", () =>
+            stepScenesAndPlayers({ matchId, version: runVersion, logger })
           );
+          completeStep("scenes_and_players");
 
-          // Step 5: Supplement clips for uncovered events (Phase 2.2a)
-          await runWithRetry("supplement_clips", () =>
-            stepSupplementClipsForUncoveredEvents({
-              matchId,
-              version: runVersion,
-              logger,
-            })
+          // Call 3: Clip labeling (video, batch)
+          await startStep("label_clips_hybrid");
+          await runWithRetry("label_clips_hybrid", () =>
+            stepLabelClipsHybrid({ matchId, version: runVersion, logger })
           );
+          completeStep("label_clips_hybrid");
 
-          logger.info("Multipass event detection complete", { matchId });
+          // Call 4: Summary + Tactics (text-only, no video)
+          await startStep("summary_and_tactics");
+          await runWithRetry("summary_and_tactics", () =>
+            stepSummaryAndTacticsHybrid({ matchId, version: runVersion, logger })
+          );
+          completeStep("summary_and_tactics");
+
+          logger.info("Tier 1 (Hybrid 4-call) pipeline completed", { matchId });
+        } else if (useConsolidatedAnalysis) {
+          // ===== Consolidated Analysis (2-call architecture) =====
+          // Call 1: Comprehensive analysis (segments, events, scenes, players, clipLabels)
+          await startStep("comprehensive_analysis");
+          await runWithRetry("comprehensive_analysis", () =>
+            stepComprehensiveAnalysis({ matchId, version: runVersion, logger })
+          );
+          completeStep("comprehensive_analysis");
+
+          // Call 2: Summary and tactics (uses Call 1 results, no video)
+          await startStep("summary_and_tactics");
+          await runWithRetry("summary_and_tactics", () =>
+            stepSummaryAndTactics({ matchId, version: runVersion, logger })
+          );
+          completeStep("summary_and_tactics");
+
+          logger.info("Tier 1 (Consolidated 2-call) pipeline completed", { matchId });
         } else {
-          // Single-pass detection (default)
-          await runWithRetry("detect_events_gemini", () =>
-            stepDetectEventsGemini({ matchId, version: runVersion })
+          // ===== Legacy Multipass Pipeline =====
+          // Phase B: Extract important scenes with Gemini
+          await startStep("extract_important_scenes");
+          await runWithRetry("extract_important_scenes", () =>
+            stepExtractImportantScenes({ matchId, version: runVersion })
           );
+          completeStep("extract_important_scenes");
+
+          // Label clips with Gemini (existing - will use cached context)
+          await startStep("label_clips");
+          await runWithRetry("label_clips", () => stepLabelClipsGemini({ matchId, version: runVersion }));
+          completeStep("label_clips");
+
+          await startStep("build_events");
+          await runWithRetry("build_events", () => stepBuildEvents({ matchId, version: runVersion }));
+          completeStep("build_events");
+
+          // Phase C: Detect events with Gemini
+          await startStep("detect_events_gemini");
+          if (isMultipassDetectionEnabled()) {
+            // Multipass detection: segment -> windowed detection -> deduplication
+            logger.info("Using multipass event detection", { matchId });
+
+            // Step 1: Segment video into active/stoppage/set_piece periods
+            const segmentResult = (await runWithRetry("segment_video", () =>
+              stepSegmentVideo({ matchId, version: runVersion, logger })
+            )) as SegmentVideoResult;
+
+            // Step 2: Detect events in overlapping windows
+            const windowedResult = (await runWithRetry("detect_events_windowed", () =>
+              stepDetectEventsWindowed({
+                matchId,
+                version: runVersion,
+                segments: segmentResult?.segments as VideoSegmentDoc[] ?? [],
+                logger,
+              })
+            )) as DetectEventsWindowedResult;
+
+            // Step 3: Deduplicate and save events
+            await runWithRetry("deduplicate_events", () =>
+              stepDeduplicateEvents({
+                matchId,
+                version: runVersion,
+                rawEvents: windowedResult?.rawEvents ?? [],
+                logger,
+              })
+            );
+
+            // Step 4: Verify low-confidence events (Phase 4)
+            await runWithRetry("verify_events", () =>
+              stepVerifyEvents({
+                matchId,
+                version: runVersion,
+                logger,
+              })
+            );
+
+            // Step 5: Supplement clips for uncovered events (Phase 2.2a)
+            await runWithRetry("supplement_clips", () =>
+              stepSupplementClipsForUncoveredEvents({
+                matchId,
+                version: runVersion,
+                logger,
+              })
+            );
+
+            logger.info("Multipass event detection complete", { matchId });
+          } else {
+            // Single-pass detection (default)
+            await runWithRetry("detect_events_gemini", () =>
+              stepDetectEventsGemini({ matchId, version: runVersion })
+            );
+          }
+          completeStep("detect_events_gemini");
+
+          // Phase D: Identify players with Gemini
+          await startStep("identify_players_gemini");
+          await runWithRetry("identify_players_gemini", () =>
+            stepIdentifyPlayersGemini({ matchId, version: runVersion })
+          );
+          completeStep("identify_players_gemini");
+
+          // Phase E: Generate tactical insights
+          await startStep("generate_tactical_insights");
+          await runWithRetry("generate_tactical_insights", () =>
+            stepGenerateTacticalInsights({ matchId, version: runVersion })
+          );
+          completeStep("generate_tactical_insights");
+
+          // Phase E: Generate match summary
+          await startStep("generate_match_summary");
+          await runWithRetry("generate_match_summary", () =>
+            stepGenerateMatchSummary({ matchId, version: runVersion })
+          );
+          completeStep("generate_match_summary");
+
+          logger.info("Tier 1 (Gemini-first multipass) pipeline completed", { matchId });
         }
-        completeStep("detect_events_gemini");
-
-        // Phase D: Identify players with Gemini
-        await startStep("identify_players_gemini");
-        await runWithRetry("identify_players_gemini", () =>
-          stepIdentifyPlayersGemini({ matchId, version: runVersion })
-        );
-        completeStep("identify_players_gemini");
-
-        // Phase E: Generate tactical insights
-        await startStep("generate_tactical_insights");
-        await runWithRetry("generate_tactical_insights", () =>
-          stepGenerateTacticalInsights({ matchId, version: runVersion })
-        );
-        completeStep("generate_tactical_insights");
-
-        // Phase E: Generate match summary
-        await startStep("generate_match_summary");
-        await runWithRetry("generate_match_summary", () =>
-          stepGenerateMatchSummary({ matchId, version: runVersion })
-        );
-        completeStep("generate_match_summary");
-
-        logger.info("Tier 1 (Gemini-first) pipeline completed", { matchId });
       } else {
         // ===== Tier 2: Gemini + YOLO Pipeline =====
         await startStep("extract_clips");
@@ -428,18 +523,64 @@ export async function runMatchPipeline({ matchId, jobId, type }: PipelineOptions
         logger.info("Tier 2 (Gemini + YOLO) pipeline completed", { matchId });
       }
     } else if (jobType === "relabel_and_stats") {
-      await startStep("label_clips");
-      await runWithRetry("label_clips", () => stepLabelClipsGemini({ matchId, version: runVersion }));
-      completeStep("label_clips");
+      // Check which analysis mode data exists
+      const [comprehensiveDoc, segmentsSnap] = await Promise.all([
+        matchRef.collection("comprehensiveAnalysis").doc("current").get(),
+        matchRef.collection("segments").where("version", "==", runVersion).limit(1).get(),
+      ]);
+      const hasComprehensiveData =
+        comprehensiveDoc.exists && comprehensiveDoc.data()?.version === runVersion;
+      const hasHybridData = !segmentsSnap.empty;
+      const useHybridPipeline = isHybridPipelineEnabled();
+      const useConsolidatedAnalysis = isConsolidatedAnalysisEnabled();
 
-      await startStep("build_events");
-      await runWithRetry("build_events", () => stepBuildEvents({ matchId, version: runVersion }));
-      completeStep("build_events");
+      if (hasHybridData || useHybridPipeline) {
+        // Use hybrid pipeline path - re-run summary_and_tactics_hybrid
+        logger.info("Using hybrid pipeline path for relabel_and_stats", {
+          matchId,
+          hasHybridData,
+          version: runVersion,
+        });
+        await startStep("summary_and_tactics");
+        await runWithRetry("summary_and_tactics", () =>
+          stepSummaryAndTacticsHybrid({ matchId, version: runVersion, logger })
+        );
+        completeStep("summary_and_tactics");
+      } else if (hasComprehensiveData || useConsolidatedAnalysis) {
+        // Use consolidated analysis path - re-run summary_and_tactics
+        logger.info("Using consolidated analysis path for relabel_and_stats", {
+          matchId,
+          hasComprehensiveData,
+          version: runVersion,
+        });
+        await startStep("summary_and_tactics");
+        await runWithRetry("summary_and_tactics", () =>
+          stepSummaryAndTactics({ matchId, version: runVersion, logger })
+        );
+        completeStep("summary_and_tactics");
+      } else {
+        // Legacy path
+        await startStep("label_clips");
+        await runWithRetry("label_clips", () => stepLabelClipsGemini({ matchId, version: runVersion }));
+        completeStep("label_clips");
+
+        await startStep("build_events");
+        await runWithRetry("build_events", () => stepBuildEvents({ matchId, version: runVersion }));
+        completeStep("build_events");
+      }
     }
 
-    await startStep("compute_stats");
-    await runWithRetry("compute_stats", () => stepComputeStats({ matchId, version: runVersion }));
-    completeStep("compute_stats");
+    // Skip compute_stats in consolidated/hybrid analysis mode
+    // Both modes calculate event stats directly and pass to summary step
+    const useHybridPipeline = isHybridPipelineEnabled();
+    const useConsolidatedAnalysis = isConsolidatedAnalysisEnabled();
+    if (!useConsolidatedAnalysis && !useHybridPipeline) {
+      await startStep("compute_stats");
+      await runWithRetry("compute_stats", () => stepComputeStats({ matchId, version: runVersion }));
+      completeStep("compute_stats");
+    } else {
+      logger.info("Skipping compute_stats (consolidated/hybrid analysis mode)", { matchId });
+    }
 
     await updateJob({ status: "done", step: "done", progress: 1 });
     await updateMatchAnalysis({ status: "done", activeVersion: runVersion, progress: FieldValue.delete() });

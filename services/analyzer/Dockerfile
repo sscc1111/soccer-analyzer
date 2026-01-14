@@ -57,7 +57,8 @@ COPY --from=builder /app/services/analyzer/dist ./services/analyzer/dist
 
 # Copy runtime files
 COPY services/analyzer/server.js ./services/analyzer/
-COPY services/analyzer/src/gemini/prompts ./src/gemini/prompts
+# Copy prompts to dist/prompts (esbuild bundles to single file, __dirname = dist/)
+COPY services/analyzer/src/gemini/prompts ./services/analyzer/dist/prompts
 
 # Set production environment
 ENV NODE_ENV=production

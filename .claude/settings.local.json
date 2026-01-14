@@ -17,7 +17,8 @@
       "Bash(pnpm:*)",
       "Bash(gcloud builds submit:*)",
       "Bash(gcloud run deploy:*)",
-      "Bash(gcloud logging read:*)"
+      "Bash(gcloud logging read:*)",
+      "Bash(gcloud builds describe:*)"
     ],
     "deny": [],
     "ask": []

@@ -28,7 +28,7 @@ const KeyMomentSchema = z.object({
   timestamp: z.number(),
   description: z.string(),
   importance: z.number(),
-  type: z.enum(["goal", "chance", "save", "foul", "substitution", "tactical_change", "other"]).optional(),
+  type: z.enum(["goal", "chance", "chance_buildup", "save", "foul", "substitution", "tactical_change", "set_piece", "turnover", "other"]).optional(),
 });
 
 const PlayerHighlightSchema = z.object({
@@ -77,7 +77,7 @@ let cachedPrompt: { task: string; instructions: string; output_schema: Record<st
 
 async function loadPrompt() {
   if (cachedPrompt) return cachedPrompt;
-  const promptPath = path.resolve(process.cwd(), "src/gemini/prompts", "match_summary_" + SUMMARY_VERSION + ".json");
+  const promptPath = path.join(__dirname, "prompts", "match_summary_" + SUMMARY_VERSION + ".json");
   const data = await readFile(promptPath, "utf-8");
   cachedPrompt = JSON.parse(data);
   return cachedPrompt!;
@@ -136,10 +136,38 @@ export async function stepGenerateMatchSummary(
     matchRef.collection("clips").where("version", "==", version).get(),
   ]);
 
+  // Phase 2.8: shotEventsからゴール数を計算（Gemini推測に頼らない）
+  const goalsByTeam = {
+    home: 0,
+    away: 0,
+  };
+  const goalEvents: Array<{ timestamp: number; team: string; player?: string }> = [];
+
+  for (const doc of shotEventsSnap.docs) {
+    const shotEvent = doc.data();
+    if (shotEvent.result === "goal") {
+      const team = shotEvent.team as "home" | "away";
+      goalsByTeam[team]++;
+      goalEvents.push({
+        timestamp: shotEvent.timestamp,
+        team: team,
+        player: shotEvent.player,
+      });
+    }
+  }
+
+  stepLogger.info("Calculated goals from shotEvents", {
+    matchId,
+    homeGoals: goalsByTeam.home,
+    awayGoals: goalsByTeam.away,
+    goalEvents,
+  });
+
   const eventStats = {
     totalShots: shotEventsSnap.size,
     totalPasses: passesSnap.size,
     totalTurnovers: turnoversSnap.size,
+    calculatedScore: goalsByTeam,
   };
 
   // Build clips array for timestamp matching
@@ -179,6 +207,20 @@ export async function stepGenerateMatchSummary(
     matchedMoments: enhancedKeyMoments.filter((m) => m.clipId).length,
   });
 
+  // Phase 2.8: shotEventsから計算したスコアを優先、Gemini推測はフォールバック
+  const finalScore = (goalsByTeam.home > 0 || goalsByTeam.away > 0)
+    ? goalsByTeam
+    : result.score;
+
+  if (finalScore && result.score && (finalScore.home !== result.score.home || finalScore.away !== result.score.away)) {
+    stepLogger.warn("Score mismatch between shotEvents and Gemini inference", {
+      matchId,
+      calculatedScore: goalsByTeam,
+      geminiScore: result.score,
+      usingCalculated: goalsByTeam.home > 0 || goalsByTeam.away > 0,
+    });
+  }
+
   // Save match summary
   const summaryDoc: MatchSummaryDoc = {
     matchId,
@@ -187,7 +229,7 @@ export async function stepGenerateMatchSummary(
     narrative: result.narrative,
     keyMoments: enhancedKeyMoments,
     playerHighlights: result.playerHighlights as PlayerHighlight[],
-    score: result.score,
+    score: finalScore,
     mvp: result.mvp ? {
       player: result.mvp.player,
       jerseyNumber: result.mvp.jerseyNumber,

@@ -17,6 +17,8 @@ export type SceneType =
   | "turnover"
   | "goal"
   | "save"
+  | "foul"
+  | "card"
   | "other";
 
 /**

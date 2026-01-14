@@ -246,8 +246,32 @@ export async function stepDeduplicateEvents(
   }
 
   // Convert shot events
+  // Phase 2.8: shotResult欠落の警告ログを追加
+  let missingShotResultCount = 0;
+  let goalCount = 0;
+
   for (let i = 0; i < shotEvents.length; i++) {
     const e = shotEvents[i];
+
+    // shotResultが欠落している場合は警告
+    if (!e.details?.shotResult) {
+      missingShotResultCount++;
+      stepLogger.warn("Shot event missing shotResult, defaulting to 'missed'", {
+        matchId,
+        eventIndex: i,
+        timestamp: e.absoluteTimestamp,
+        team: e.team,
+        player: e.player,
+        confidence: e.adjustedConfidence,
+        details: e.details,
+      });
+    }
+
+    const shotResult = (e.details?.shotResult || "missed") as "goal" | "saved" | "blocked" | "missed" | "post";
+    if (shotResult === "goal") {
+      goalCount++;
+    }
+
     const eventDoc: ShotEventDoc = {
       eventId: `${matchId}_shot_${i}`,
       matchId,
@@ -255,7 +279,7 @@ export async function stepDeduplicateEvents(
       timestamp: e.absoluteTimestamp,
       team: e.team as TeamId,
       player: e.player,
-      result: (e.details?.shotResult || "missed") as "goal" | "saved" | "blocked" | "missed" | "post",
+      result: shotResult,
       confidence: e.adjustedConfidence,
       source: "gemini",
       version,
@@ -263,6 +287,14 @@ export async function stepDeduplicateEvents(
     };
     allDocs.push({ collection: "shotEvents", id: eventDoc.eventId, data: eventDoc });
   }
+
+  // ゴール検出のサマリーログ
+  stepLogger.info("Shot events processed", {
+    matchId,
+    totalShots: shotEvents.length,
+    goalCount,
+    missingShotResultCount,
+  });
 
   // Convert set piece events
   for (let i = 0; i < setPieceEvents.length; i++) {

@@ -62,7 +62,7 @@ let cachedPrompt: {
  */
 async function loadPrompt() {
   if (cachedPrompt) return cachedPrompt;
-  const promptPath = path.resolve(process.cwd(), "src/gemini/prompts", "scene_extraction_" + SCENE_EXTRACTION_VERSION + ".json");
+  const promptPath = path.join(__dirname, "prompts", "scene_extraction_" + SCENE_EXTRACTION_VERSION + ".json");
   const data = await readFile(promptPath, "utf-8");
   cachedPrompt = JSON.parse(data);
   return cachedPrompt!;

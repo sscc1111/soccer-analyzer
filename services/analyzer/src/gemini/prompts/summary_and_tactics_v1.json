@@ -1,0 +1,283 @@
+{
+  "version": "v1",
+  "task": "Generate tactical analysis and match summary from comprehensive analysis results (Call 2 - no video required)",
+  "description": "This prompt is used for the second API call. It takes the results from comprehensive_analysis_v1 (segments, events, scenes, players) and generates tactical insights and match summary without needing the video again.",
+  "input_context": {
+    "description": "The following data will be provided as input context from Call 1 (comprehensive analysis)",
+    "fields": {
+      "metadata": "Video metadata including duration and quality",
+      "teams": "Team colors and attacking directions",
+      "segments": "Video segments with types and importance",
+      "events": "Detected events (pass, shot, carry, turnover, setPiece)",
+      "scenes": "Important scenes with timestamps and descriptions",
+      "players": "Identified players with jersey numbers",
+      "eventStats": "Aggregated event statistics (passes, shots, turnovers per team)"
+    }
+  },
+  "instructions": "Call 1の包括的分析結果を基に、戦術分析と試合サマリーを生成してください。\n\n注意: このプロンプトでは動画を再分析しません。入力として提供されるデータのみを使用してください。\n\n---\n\n# 1. 戦術分析 (tactical)\n\n## フォーメーション\n- 各チームの基本フォーメーションを推定\n- 選手の分布とイベントの発生位置から判断\n\n### 11人制フォーメーション例\n- 4-4-2, 4-3-3, 4-2-3-1, 3-5-2, 3-4-3, 5-3-2\n\n### フットサル/少人数制フォーメーション例\n- 2-2, 1-2-1, 3-1, 4-0 (フットサル)\n- 3-2-1, 2-3-1, 3-3 (7人制)\n\n## テンポ\n- パス数 ÷ プレー時間（分）で計算\n- eventStats.home.passes と eventStats.away.passes を使用\n\n## 攻撃パターン（2-4個）\n- イベントの発生ゾーンとタイプから分析\n- サイド攻撃、中央突破、カウンター、セットプレー活用など\n\n## 守備パターン（2-3個）\n- ターンオーバーの発生位置と頻度から分析\n- プレス強度、ブロック形成、マーキング方式など\n\n## プレス強度（0-100）\n- 0-30: ローブロック（自陣に引いて守る）\n- 31-50: ミドルブロック（中盤から守備）\n- 51-70: 中程度のプレス\n- 71-85: ハイプレス\n- 86-100: ゲーゲンプレス（即時奪回）\n\n## ビルドアップスタイル\n- short: ショートパス主体のビルドアップ\n- long: ロングボール主体\n- mixed: 状況に応じて使い分け\n\n## 重要な戦術的洞察（3-5個）\n- 強みと弱点\n- キープレイヤー\n- 改善点など\n\n---\n\n# 2. 試合サマリー (summary)\n\n## ヘッドライン（15-30文字）\n- 試合を一言で表す印象的な見出し\n- 結果が分かれば含める\n\n## 試合経過 (narrative)\n- firstHalf: 前半の流れ（100-200文字）\n- secondHalf: 後半の流れ（100-200文字）\n- overall: 全体の総括（50-100文字、オプション）\n\n## キーモーメント（3-7個）\nscenes から重要なシーンを選出:\n- timestamp: 秒単位\n- description: 何が起きたか（30-50文字）\n- importance: 0.0-1.0\n- type: goal, chance, save, foul, substitution, tactical_change, other\n\n### 重要度の基準\n- 1.0: 試合を決定づけた瞬間\n- 0.8-0.9: ゴール、PKストップなど\n- 0.6-0.7: ビッグセーブ、決定機\n- 0.4-0.5: やや重要な場面\n\n## 選手ハイライト（2-5人）\nplayers と events から活躍した選手を選出:\n- player: #10 形式\n- jerseyNumber: 数値（オプション）\n- team: home | away\n- achievement: 具体的な成果\n\n## スコア（検出できた場合）\n- events から type=shot, details.shotResult=goal を集計\n- 不明な場合は省略\n\n## MVP\n- 最も試合に影響を与えた選手\n- ゴール・アシスト数だけでなく守備貢献も考慮\n\n---\n\n# 出力フォーマット\n\n```json\n{\n  \"tactical\": {\n    \"formation\": {\n      \"home\": \"4-3-3\",\n      \"away\": \"4-4-2\"\n    },\n    \"tempo\": {\n      \"home\": 12.5,\n      \"away\": 8.3\n    },\n    \"attackPatterns\": [\"...\", \"...\"],\n    \"defensivePatterns\": [\"...\", \"...\"],\n    \"keyInsights\": [\"...\", \"...\", \"...\"],\n    \"pressingIntensity\": {\n      \"home\": 75,\n      \"away\": 45\n    },\n    \"buildUpStyle\": {\n      \"home\": \"short\",\n      \"away\": \"long\"\n    }\n  },\n  \"summary\": {\n    \"headline\": \"...\",\n    \"narrative\": {\n      \"firstHalf\": \"...\",\n      \"secondHalf\": \"...\",\n      \"overall\": \"...（オプション）\"\n    },\n    \"keyMoments\": [...],\n    \"playerHighlights\": [...],\n    \"score\": {\n      \"home\": 2,\n      \"away\": 1\n    },\n    \"mvp\": {\n      \"player\": \"#10\",\n      \"team\": \"home\",\n      \"achievement\": \"...\"\n    }\n  }\n}\n```",
+  "examples": [
+    {
+      "scenario": "ホームチームがポゼッション優位、2-1で勝利",
+      "input_summary": {
+        "eventStats": {
+          "home": { "passes": 250, "passesComplete": 220, "shots": 8, "shotsOnTarget": 4 },
+          "away": { "passes": 150, "passesComplete": 120, "shots": 5, "shotsOnTarget": 2 }
+        },
+        "segments_summary": "active_play が多く、ゴールモーメント 3回",
+        "scenes_summary": "goal 2回 (home), goal 1回 (away), chance 4回"
+      },
+      "output": {
+        "tactical": {
+          "formation": {
+            "home": "4-3-3",
+            "away": "4-4-2"
+          },
+          "tempo": {
+            "home": 12.5,
+            "away": 7.5
+          },
+          "attackPatterns": [
+            "ホームは左サイドからの攻撃が多く、左ウイングとサイドバックの連携でチャンス創出",
+            "中盤のトライアングルでショートパスビルドアップ",
+            "アウェイは2トップを生かしたカウンター狙い"
+          ],
+          "defensivePatterns": [
+            "ホームは前線からの積極的プレスで相手のビルドアップを妨害",
+            "アウェイは4-4ブロックで中央を固める守備"
+          ],
+          "keyInsights": [
+            "ホームの左サイド攻撃に対し、アウェイの右SBが孤立しがち",
+            "アウェイの2トップへのロングボールは効果的だが中盤のサポートが遅い",
+            "ホームのボランチのポジショニングで数的優位を作っている"
+          ],
+          "pressingIntensity": {
+            "home": 75,
+            "away": 45
+          },
+          "buildUpStyle": {
+            "home": "short",
+            "away": "long"
+          }
+        },
+        "summary": {
+          "headline": "ホームがポゼッションで圧倒、2-1で勝利",
+          "narrative": {
+            "firstHalf": "前半からホームがボールを支配。25分に#10のスルーパスから#9が先制点。アウェイも40分にカウンターから#7が同点に追いつき、1-1で折り返し。",
+            "secondHalf": "後半もホームが攻勢を強める。65分にホーム#11のクロスから#9がヘッドで決め、2-1に。アウェイは終盤パワープレーを仕掛けるも届かず。",
+            "overall": "ホームのポゼッションサッカーが功を奏した試合。アウェイもカウンターで見せ場を作った。"
+          },
+          "keyMoments": [
+            {
+              "timestamp": 1500,
+              "description": "ホーム#10のスルーパスから#9が先制ゴール",
+              "importance": 0.85,
+              "type": "goal"
+            },
+            {
+              "timestamp": 2400,
+              "description": "アウェイ#7がカウンターから同点ゴール",
+              "importance": 0.85,
+              "type": "goal"
+            },
+            {
+              "timestamp": 3900,
+              "description": "ホーム#9がヘディングで決勝点",
+              "importance": 0.95,
+              "type": "goal"
+            }
+          ],
+          "playerHighlights": [
+            {
+              "player": "#9",
+              "jerseyNumber": 9,
+              "team": "home",
+              "achievement": "2ゴールで勝利に貢献"
+            },
+            {
+              "player": "#10",
+              "jerseyNumber": 10,
+              "team": "home",
+              "achievement": "1アシスト、ゲームメイクで存在感"
+            },
+            {
+              "player": "#7",
+              "jerseyNumber": 7,
+              "team": "away",
+              "achievement": "カウンターからゴール、孤軍奮闘"
+            }
+          ],
+          "score": {
+            "home": 2,
+            "away": 1
+          },
+          "mvp": {
+            "player": "#9",
+            "team": "home",
+            "achievement": "2ゴールで試合を決めたストライカー"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "スコアレスドロー、両GKが好守備",
+      "output": {
+        "tactical": {
+          "formation": {
+            "home": "4-4-2",
+            "away": "4-4-2"
+          },
+          "tempo": {
+            "home": 10.2,
+            "away": 9.8
+          },
+          "attackPatterns": [
+            "両チームともサイド攻撃からクロスを狙う",
+            "ミドルシュートでの打開を試みる"
+          ],
+          "defensivePatterns": [
+            "両チームともコンパクトなブロックを形成",
+            "中盤でのプレスが激しい"
+          ],
+          "keyInsights": [
+            "両GKの好セーブが目立つ試合",
+            "決定機の精度が課題",
+            "互角の展開で勝者なし"
+          ],
+          "pressingIntensity": {
+            "home": 60,
+            "away": 62
+          },
+          "buildUpStyle": {
+            "home": "mixed",
+            "away": "mixed"
+          }
+        },
+        "summary": {
+          "headline": "白熱のスコアレス！両GKが守護神",
+          "narrative": {
+            "firstHalf": "両チームとも積極的に攻め合う展開。ホーム#11の決定機をアウェイGKがビッグセーブ。アウェイ#8のミドルもポスト直撃と惜しい場面が続く。",
+            "secondHalf": "後半は守備の強度が上がり、中盤での激しいプレスの応酬。75分にホームがPKを獲得もアウェイGKがストップ。最後までスコアレス。",
+            "overall": "両GKの活躍が光った質の高いゴールレスマッチ。"
+          },
+          "keyMoments": [
+            {
+              "timestamp": 1200,
+              "description": "ホーム#11の決定機をアウェイGKがビッグセーブ",
+              "importance": 0.85,
+              "type": "save"
+            },
+            {
+              "timestamp": 2400,
+              "description": "アウェイ#8のミドルシュートがポスト直撃",
+              "importance": 0.8,
+              "type": "chance"
+            },
+            {
+              "timestamp": 4500,
+              "description": "ホームのPKをアウェイGKが驚異的セーブで阻止",
+              "importance": 0.95,
+              "type": "save"
+            }
+          ],
+          "playerHighlights": [
+            {
+              "player": "GK",
+              "team": "away",
+              "achievement": "PKストップを含む複数のビッグセーブ"
+            },
+            {
+              "player": "GK",
+              "team": "home",
+              "achievement": "安定したセービングでゴールを死守"
+            }
+          ],
+          "score": {
+            "home": 0,
+            "away": 0
+          },
+          "mvp": {
+            "player": "GK",
+            "team": "away",
+            "achievement": "PKストップを含む神懸かり的セーブでチームを救った"
+          }
+        }
+      }
+    }
+  ],
+  "output_schema": {
+    "tactical": {
+      "formation": {
+        "home": "string (e.g., '4-3-3')",
+        "away": "string"
+      },
+      "tempo": {
+        "home": "number (passes per minute)",
+        "away": "number"
+      },
+      "attackPatterns": ["string (2-4 patterns)"],
+      "defensivePatterns": ["string (2-3 patterns)"],
+      "keyInsights": ["string (3-5 insights)"],
+      "pressingIntensity": {
+        "home": "number (0-100)",
+        "away": "number (0-100)"
+      },
+      "buildUpStyle": {
+        "home": "short | long | mixed",
+        "away": "short | long | mixed"
+      }
+    },
+    "summary": {
+      "headline": "string (15-30 chars)",
+      "narrative": {
+        "firstHalf": "string (100-200 chars)",
+        "secondHalf": "string (100-200 chars)",
+        "overall": "string (50-100 chars, optional)"
+      },
+      "keyMoments": [
+        {
+          "timestamp": "number (seconds)",
+          "description": "string",
+          "importance": "number (0.0-1.0)",
+          "type": "goal | chance | save | foul | substitution | tactical_change | other",
+          "clipId": "string | null (optional, reference to clip document for video playback)"
+        }
+      ],
+      "playerHighlights": [
+        {
+          "player": "string (#10 format)",
+          "jerseyNumber": "number (optional)",
+          "team": "home | away",
+          "achievement": "string"
+        }
+      ],
+      "score": {
+        "home": "number",
+        "away": "number"
+      },
+      "mvp": {
+        "player": "string",
+        "team": "home | away",
+        "achievement": "string"
+      },
+      "tags": ["string (optional, array of match tags like 'intense', 'defensive', 'high-scoring')"]
+    }
+  },
+  "edge_cases": [
+    {
+      "scenario": "スコアが不明な場合",
+      "guidance": "score フィールドを省略。ヘッドラインは結果に依存しない表現を使用。"
+    },
+    {
+      "scenario": "イベントデータが少ない",
+      "guidance": "利用可能なデータから推測。不確実な場合は keyInsights で言及。"
+    },
+    {
+      "scenario": "片方のチームの情報が偏っている",
+      "guidance": "見えている情報のみで分析。バランスの問題は narrative で言及。"
+    },
+    {
+      "scenario": "短い試合（フットサルなど）",
+      "guidance": "テンポの基準を調整（フットサルは15-25が標準）。フォーメーションも5人制に合わせる。"
+    }
+  ]
+}

@@ -147,7 +147,7 @@ export async function stepUploadVideoToGemini({
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error("Failed to create Gemini cache", { matchId, error: errorMessage });
+    logger.error("Failed to create Gemini cache", error, { matchId });
     return {
       matchId,
       ok: false,

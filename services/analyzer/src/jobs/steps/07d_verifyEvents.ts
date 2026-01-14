@@ -172,9 +172,28 @@ export async function stepVerifyEvents(
         );
         confirmed++;
       } else if (!verificationResult.verified || verificationResult.confidence < 0.5) {
-        // Rejected: Delete the event
-        await deleteEvent(matchRef, collection, eventId, stepLogger);
-        rejected++;
+        // Phase 2.8: ゴールイベントは特別扱い - 0.3以上なら保持
+        const isGoalShot = event.type === "shot" && (event as ShotEventDoc).result === "goal";
+        if (isGoalShot && verificationResult.confidence >= 0.3) {
+          // ゴールは低信頼度でも保持（手動レビュー用にフラグを立てる）
+          stepLogger.info("Preserving low-confidence goal event for manual review", {
+            eventId,
+            confidence: verificationResult.confidence,
+          });
+          await updateVerifiedEvent(
+            matchRef,
+            collection,
+            eventId,
+            event,
+            { ...verificationResult, verified: true },
+            stepLogger
+          );
+          modified++;
+        } else {
+          // Rejected: Delete the event
+          await deleteEvent(matchRef, collection, eventId, stepLogger);
+          rejected++;
+        }
       } else {
         // Modified: Update with corrections but keep confidence in 0.5-0.7 range
         await updateVerifiedEvent(

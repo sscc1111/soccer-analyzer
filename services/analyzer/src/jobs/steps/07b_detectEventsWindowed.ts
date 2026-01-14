@@ -271,7 +271,7 @@ let cachedPrompt: { version: string; task: string; instructions: string; output_
 async function loadPrompt(promptVersion: string = PROMPT_VERSION) {
   if (cachedPrompt && cachedPrompt.version === promptVersion) return cachedPrompt;
 
-  const promptPath = path.resolve(process.cwd(), "src/gemini/prompts", `event_detection_${promptVersion}.json`);
+  const promptPath = path.join(__dirname, "prompts", `event_detection_${promptVersion}.json`);
   const data = await readFile(promptPath, "utf-8");
   cachedPrompt = JSON.parse(data);
   return cachedPrompt!;

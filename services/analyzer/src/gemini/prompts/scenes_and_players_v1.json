@@ -1,0 +1,148 @@
+{
+  "version": "v1",
+  "task": "Extract important scenes and identify players from a soccer match video. This is the second analysis pass using context from prior event detection.",
+  "instructions": "この試合動画を分析し、以下の2つの処理を行ってください：\n1. 重要シーンの抽出\n2. 選手・チームの識別\n\n---\n\n# 前提コンテキスト\n\n{{CONTEXT_PLACEHOLDER}}\n\n上記のセグメント・イベント情報を踏まえて、より詳細なシーン抽出と選手識別を行ってください。\n\n---\n\n# PART 1: 重要シーン抽出\n\n## シーンタイプと重要度ガイドライン\n\n| タイプ | 説明 | 重要度目安 |\n|--------|------|------------|\n| goal | ゴールシーン | 1.0 |\n| shot | シュート（枠内） | 0.85-0.95 |\n| save | GKのセーブ | 0.75-0.85 |\n| chance | 決定機（シュート前の崩し） | 0.70-0.80 |\n| turnover | 重要なボール奪取 | 0.50-0.70 |\n| foul | ファウル | 0.40-0.60 |\n| card | カード（イエロー/レッド） | 0.70-0.90 |\n| setPiece | セットピース（コーナー、FK等） | 0.40-0.60 |\n| dribble | 個人技・ドリブル突破 | 0.50-0.70 |\n| defense | 好守備（タックル、ブロック、クリア） | 0.50-0.70 |\n| other | その他の注目シーン | 0.30-0.50 |\n\n## シーン抽出の基準\n\n1. **ゴール関連シーンは必ず抽出**\n   - ゴールに繋がるプレー（ラスト3タッチ程度）\n   - ゴール直前のシュートシーン\n\n2. **シュートシーンの優先**\n   - 枠内シュートは 0.85以上\n   - 枠外でも危険なシュートは 0.60-0.80\n   - ブロックされたシュートは 0.50-0.70\n\n3. **suggestedClip の設定**\n   - シーンごとに推奨クリップ範囲を設定\n   - t0: シーンの数秒前から開始\n   - t1: シーンの数秒後まで継続\n\n---\n\n# PART 2: 選手・チーム識別\n\n## チーム識別\n\n1. **ユニフォームカラー**\n   - primaryColor: メインのユニフォーム色（hex形式 #RRGGBB）\n   - secondaryColor: サブカラー（パンツ、ソックス等）\n   - goalkeeperColor: GKユニフォーム色\n\n2. **攻撃方向**\n   - 前半にどちらのチームがどの方向に攻めているか\n   - left_to_right または right_to_left\n\n## 選手識別\n\n1. **背番号のOCR**\n   - 可能な限り背番号を読み取り（整数）\n   - 読み取れない場合は null\n\n2. **役割**\n   - player: フィールドプレイヤー\n   - goalkeeper: ゴールキーパー\n\n3. **信頼度**\n   - 0.9-1.0: 背番号が明確に読み取れる\n   - 0.7-0.9: 背番号がほぼ読み取れる\n   - 0.5-0.7: 背番号が不明確だが推測可能\n   - 0.5未満: 報告しない\n\n## 審判識別\n\n- main_referee: 主審（通常黒系ユニフォーム）\n- linesman: 副審（線審）\n- fourth_official: 第4の審判\n\n---\n\n## 注意事項\n\n1. **重複排除**: 同じシーンを複数報告しない\n2. **タイムスタンプ精度**: 秒単位、小数点以下1桁\n3. **コンテキストの活用**: Call 1で検出されたイベントを参考にシーンを特定\n4. **選手の重複**: 同じ背番号の選手は最も信頼度の高い1件のみ報告\n5. **GKの識別**: 異なるユニフォーム色を目印に識別",
+  "examples": [
+    {
+      "scenario": "ゴールシーンを含む重要シーン抽出",
+      "context": "Call 1で検出: shot at 52.3s (goal, home #9)",
+      "output": {
+        "scenes": [
+          {
+            "startSec": 45.0,
+            "endSec": 55.0,
+            "type": "goal",
+            "team": "home",
+            "description": "カウンターからの見事なフィニッシュ。#10のスルーパスから#9が冷静に流し込む",
+            "importance": 1.0,
+            "confidence": 0.98,
+            "suggestedClip": {
+              "t0": 42.0,
+              "t1": 60.0
+            }
+          }
+        ],
+        "players": [
+          {
+            "team": "home",
+            "jerseyNumber": 9,
+            "role": "player",
+            "confidence": 0.95
+          },
+          {
+            "team": "home",
+            "jerseyNumber": 10,
+            "role": "player",
+            "confidence": 0.90
+          }
+        ]
+      }
+    },
+    {
+      "scenario": "GKのセーブシーン",
+      "context": "Call 1で検出: shot at 78.5s (saved, away #11)",
+      "output": {
+        "scenes": [
+          {
+            "startSec": 76.0,
+            "endSec": 82.0,
+            "type": "save",
+            "team": "home",
+            "description": "決定的なシュートをGKがファインセーブ。右足一本で弾き出す",
+            "importance": 0.85,
+            "confidence": 0.90,
+            "suggestedClip": {
+              "t0": 74.0,
+              "t1": 85.0
+            }
+          }
+        ],
+        "players": [
+          {
+            "team": "away",
+            "jerseyNumber": 11,
+            "role": "player",
+            "confidence": 0.88
+          },
+          {
+            "team": "home",
+            "jerseyNumber": 1,
+            "role": "goalkeeper",
+            "confidence": 0.92
+          }
+        ]
+      }
+    }
+  ],
+  "edge_cases": {
+    "cases": [
+      {
+        "scenario": "リプレイ映像内の選手",
+        "guidance": "リプレイ映像でも選手識別は有効。ただしシーンは既に抽出済みの可能性"
+      },
+      {
+        "scenario": "同じ背番号が複数回検出",
+        "guidance": "最も信頼度の高い1件のみを報告"
+      },
+      {
+        "scenario": "GKがフィールドプレイヤーと同じ色",
+        "guidance": "ゴール前のポジションと手袋着用で判断"
+      },
+      {
+        "scenario": "シーンの境界が不明確",
+        "guidance": "suggestedClipは余裕を持って設定（前後3-5秒）"
+      },
+      {
+        "scenario": "Call 1で検出されなかったシーン",
+        "guidance": "目視で重要なシーンがあれば追加で報告"
+      }
+    ]
+  },
+  "output_schema": {
+    "scenes": [
+      {
+        "startSec": "number (1 decimal)",
+        "endSec": "number (1 decimal, optional)",
+        "type": "goal | shot | save | chance | turnover | foul | card | setPiece | dribble | defense | other",
+        "team": "home | away (optional)",
+        "description": "string",
+        "importance": "number (0.0-1.0)",
+        "confidence": "number (0.0-1.0, optional)",
+        "suggestedClip": {
+          "t0": "number (clip start time in seconds)",
+          "t1": "number (clip end time in seconds)"
+        }
+      }
+    ],
+    "players": {
+      "teams": {
+        "home": {
+          "primaryColor": "string (hex format #RRGGBB)",
+          "secondaryColor": "string (hex format, optional)",
+          "goalkeeperColor": "string (hex format, optional)",
+          "attackingDirection": "left_to_right | right_to_left (optional)"
+        },
+        "away": {
+          "primaryColor": "string (hex format #RRGGBB)",
+          "secondaryColor": "string (hex format, optional)",
+          "goalkeeperColor": "string (hex format, optional)",
+          "attackingDirection": "left_to_right | right_to_left (optional)"
+        }
+      },
+      "identified": [
+        {
+          "team": "home | away",
+          "jerseyNumber": "number | null",
+          "role": "player | goalkeeper",
+          "confidence": "number (0.5-1.0)"
+        }
+      ],
+      "referees": [
+        {
+          "role": "main_referee | linesman | fourth_official",
+          "uniformColor": "string (hex format, optional)"
+        }
+      ]
+    }
+  }
+}

@@ -168,12 +168,21 @@ async function vertexAIRequest<T>(
 
       if (!response.ok) {
         const errorText = await response.text();
-        let errorData: { error?: { message?: string; code?: number } } = {};
+        let errorData: { error?: { message?: string; code?: number; status?: string } } = {};
         try {
           errorData = JSON.parse(errorText);
         } catch {
           // Ignore JSON parse errors
         }
+
+        // Log the actual API error response for debugging
+        logger.error("Vertex AI API error response", {
+          statusCode: response.status,
+          errorText: errorText.substring(0, 1000), // Limit to prevent huge logs
+          errorMessage: errorData.error?.message,
+          errorCode: errorData.error?.code,
+          errorStatus: errorData.error?.status,
+        });
 
         // Handle rate limiting
         if (response.status === 429) {
@@ -184,9 +193,10 @@ async function vertexAIRequest<T>(
         }
 
         // Handle other API errors
+        const errorMessage = errorData.error?.message || errorText || "Unknown API error";
         throw new ExternalServiceError(
           "vertex-ai",
-          errorData.error?.message || errorText,
+          errorMessage,
           {
             statusCode: response.status,
             details: errorData,

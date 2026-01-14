@@ -231,6 +231,13 @@ export type AnalysisStep =
   | "compute_stats"
   | "generate_tactical_insights"
   | "generate_match_summary"
+  // Consolidated analysis steps (2-call architecture)
+  | "comprehensive_analysis"
+  | "summary_and_tactics"
+  // Hybrid 4-call pipeline steps
+  | "segment_and_events"
+  | "scenes_and_players"
+  | "label_clips_hybrid"
   | "done";
 
 /**
@@ -253,6 +260,13 @@ export const ANALYSIS_STEP_INFO: Record<AnalysisStep, { label: string; labelJa: 
   compute_stats: { label: "Computing stats", labelJa: "スタッツ計算中" },
   generate_tactical_insights: { label: "Generating tactical insights", labelJa: "タクティカル分析生成中" },
   generate_match_summary: { label: "Generating match summary", labelJa: "試合サマリー生成中" },
+  // Consolidated analysis steps (2-call architecture)
+  comprehensive_analysis: { label: "Comprehensive video analysis", labelJa: "包括的動画分析中" },
+  summary_and_tactics: { label: "Generating summary and tactics", labelJa: "サマリーと戦術分析生成中" },
+  // Hybrid 4-call pipeline steps
+  segment_and_events: { label: "Segmenting video and detecting events", labelJa: "セグメント分割とイベント検出中" },
+  scenes_and_players: { label: "Extracting scenes and identifying players", labelJa: "シーン抽出と選手識別中" },
+  label_clips_hybrid: { label: "Labeling clips", labelJa: "クリップラベリング中" },
   done: { label: "Done", labelJa: "完了" },
 };
 

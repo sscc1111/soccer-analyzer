@@ -1,0 +1,255 @@
+{
+  "version": "v1",
+  "task": "Comprehensive soccer match video analysis: segments, events, scenes, players, and clip labels in a single pass",
+  "instructions": "この試合動画を包括的に分析し、以下の全てを1回のレスポンスで出力してください。\n\n---\n\n# 1. メタデータと基本情報\n\n## 動画品質評価\n- good: 画質良好、選手・ボールが明確に見える\n- fair: 一部遮蔽や揺れがあるが分析可能\n- poor: 画質低い、分析精度に影響\n\n## チーム識別\n- home/away をユニフォームの色で区別\n- 各チームの攻撃方向を記録（前半基準）\n- ゴールキーパーの色も記録\n\n---\n\n# 2. セグメント分割 (segments)\n\n動画を時系列でセグメント分割してください。\n\n## セグメントタイプ\n\n### active_play\nボールがインプレーで選手が活発に動いている状態。\n- importance 1-5 を必ず設定\n  - 5: ゴール前チャンス、シュートシーン\n  - 4: ペナルティエリア侵入、崩しの場面\n  - 3: 中盤攻防、ビルドアップ\n  - 2: ポゼッション維持\n  - 1: 単純なボール回し\n\n### stoppage\nデッドボール状態。subtype で理由を記録:\n- foul: ファウルによる停止\n- injury: 負傷による停止\n- substitution: 選手交代\n- referee_decision: 審判の判断による停止\n- other: その他の停止\n\n### set_piece\nセットプレー。subtype: corner, free_kick, penalty, goal_kick, throw_in, kick_off\n\n### goal_moment\nゴールシーン（前10秒〜後10秒を含む）\n\n### replay\nスローモーション・リプレイ映像\n\n---\n\n# 3. イベント検出 (events)\n\n以下のイベントを時系列で検出してください。\n\n## ★★★ シュート検出は最優先 ★★★\n\n### shot（シュート）\n**不確かでも報告すること。信頼度 0.3 以上で報告。**\n\n視覚的指標:\n- ペナルティエリア内からの強いキック\n- ボールがゴール方向へ飛んでいる\n- キーパーが飛び込んでいる/反応している\n- 選手がゴールに向かって足を振っている\n\n結果: goal, saved, blocked, missed, post\nタイプ: power, placed, header, volley, long_range, chip\n\n### pass（パス）\n信頼度 0.5 以上で報告。\n\nタイプ:\n- short: 10m未満\n- medium: 10-25m\n- long: 25m以上\n- through: 守備ライン裏へ通すパス\n- cross: サイドからペナルティエリアへ\n\n結果: complete, incomplete, intercepted\n\n### carry（キャリー/ドリブル）\n5m以上、1秒以上のボール保持移動。\n\n### turnover（ターンオーバー）\nボール所持の変更。\nタイプ: tackle, interception, bad_touch, out_of_bounds\n\n### setPiece（セットピース）\nタイプ: corner, free_kick, penalty, throw_in, goal_kick, kick_off\n\n---\n\n# 4. 重要シーン (scenes)\n\n以下のシーンを抽出してください。\n\n## シーンタイプと重要度\n- goal: 1.0（最重要）\n- shot: 0.8-0.9\n- save: 0.7-0.8\n- chance: 0.7-0.8\n- turnover: 0.5-0.6\n- foul: 0.4-0.6\n- card: 0.6-0.7\n- setPiece: 0.4-0.5（重要なものは0.7）\n- dribble: 0.5-0.7\n- defense: 0.5-0.7\n\n## クリップ提案\n各シーンには suggestedClip (t0, t1) を含めてください。\n通常は startSec の3秒前から5秒後まで。\n\n---\n\n# 5. 選手識別 (players)\n\n## チームカラー\n- home/away の primaryColor, secondaryColor, goalkeeperColor\n- 色は hex 形式 (#RRGGBB)\n\n## 選手リスト\n- team: home | away\n- jerseyNumber: 背番号（読み取れない場合は null）\n- role: player | goalkeeper\n- confidence: 0.0-1.0\n\n## 審判\n- role: main_referee, linesman, fourth_official\n- uniformColor: hex 形式\n\n---\n\n# 6. クリップラベル (clipLabels)\n\n検出した scenes に基づき、各クリップにラベルを付与。\n\n## ラベルカテゴリ\n- shot: シュートシーン\n- chance: ゴールチャンス\n- setPiece: セットプレー\n- dribble: ドリブル突破\n- defense: 好守備\n- other: その他\n\n## 各クリップに含める情報\n- timestamp: シーンの基準タイムスタンプ\n- label: カテゴリ\n- confidence: 0.0-1.0\n- title: 10-30文字の短いタイトル\n- summary: 50-100文字の説明\n- tags: 3-5個のタグ（例: [\"シュート\", \"枠内\", \"右サイド\"]）\n- coachTips: 1-3個のコーチングアドバイス\n\n---\n\n# 出力フォーマット\n\n以下の構造でJSONを出力してください。\n\n```json\n{\n  \"metadata\": {\n    \"totalDurationSec\": number,\n    \"videoQuality\": \"good | fair | poor\",\n    \"qualityIssues\": [\"optional array of issues\"]\n  },\n  \"teams\": {\n    \"home\": {\n      \"primaryColor\": \"#RRGGBB\",\n      \"secondaryColor\": \"#RRGGBB (optional)\",\n      \"goalkeeperColor\": \"#RRGGBB\",\n      \"attackingDirection\": \"left_to_right | right_to_left\"\n    },\n    \"away\": { ... }\n  },\n  \"segments\": [...],\n  \"events\": [...],\n  \"scenes\": [...],\n  \"players\": {\n    \"teams\": { ... },\n    \"players\": [...],\n    \"referees\": [...]\n  },\n  \"clipLabels\": [...]\n}\n```\n\n---\n\n# 注意事項\n\n1. **タイムスタンプ精度**: 秒単位、小数点以下1桁\n2. **チーム統一**: 全てのイベントで home/away を統一\n3. **選手識別**: #10 形式で背番号を記録\n4. **シュート優先**: 不確かでも報告（confidence 0.3以上）\n5. **重複許容**: 同タイムスタンプで複数イベントを報告可\n6. **視覚的根拠**: 各イベントに visualEvidence を記載\n7. **リプレイ除外**: リプレイ映像からはイベントを検出しない",
+  "examples": [
+    {
+      "scenario": "ゴールシーン全体の分析",
+      "output": {
+        "segments": [
+          {
+            "startSec": 40.0,
+            "endSec": 55.0,
+            "type": "goal_moment",
+            "description": "ホームチームのカウンターからゴール",
+            "attackingTeam": "home",
+            "importance": 5,
+            "confidence": 0.95,
+            "visualEvidence": "カウンター攻撃、シュート、ゴールネット揺れ、選手歓喜"
+          }
+        ],
+        "events": [
+          {
+            "timestamp": 42.5,
+            "type": "turnover",
+            "team": "home",
+            "player": "#6",
+            "zone": "middle_third",
+            "details": { "turnoverType": "interception" },
+            "confidence": 0.9,
+            "visualEvidence": "中盤でパスカット"
+          },
+          {
+            "timestamp": 45.3,
+            "type": "pass",
+            "team": "home",
+            "player": "#10",
+            "zone": "attacking_third",
+            "details": { "passType": "through", "outcome": "complete", "targetPlayer": "#9" },
+            "confidence": 0.85,
+            "visualEvidence": "スルーパス、#9が裏へ抜ける"
+          },
+          {
+            "timestamp": 47.8,
+            "type": "shot",
+            "team": "home",
+            "player": "#9",
+            "zone": "attacking_third",
+            "details": { "shotResult": "goal", "shotType": "placed" },
+            "confidence": 0.98,
+            "visualEvidence": "ペナルティエリア内からのシュート、ゴールネット揺れる"
+          }
+        ],
+        "scenes": [
+          {
+            "startSec": 42.5,
+            "endSec": 52.0,
+            "type": "goal",
+            "team": "home",
+            "description": "カウンターからのゴール",
+            "importance": 1.0,
+            "confidence": 0.98,
+            "suggestedClip": { "t0": 40.0, "t1": 55.0 }
+          }
+        ],
+        "clipLabels": [
+          {
+            "timestamp": 47.8,
+            "label": "shot",
+            "confidence": 0.98,
+            "title": "カウンターゴール",
+            "summary": "中盤でのインターセプトからスルーパス、#9が冷静にゴール左隅へ決める",
+            "tags": ["ゴール", "カウンター", "スルーパス", "決定力"],
+            "coachTips": ["カウンター時の素早い縦パスが効果的", "フィニッシュの落ち着きを参考に"]
+          }
+        ]
+      }
+    },
+    {
+      "scenario": "セーブシーン",
+      "output": {
+        "events": [
+          {
+            "timestamp": 72.1,
+            "type": "shot",
+            "team": "away",
+            "player": "#7",
+            "zone": "attacking_third",
+            "details": { "shotResult": "saved", "shotType": "header" },
+            "confidence": 0.9,
+            "visualEvidence": "ヘディングシュート、GKが横っ飛びでセーブ"
+          }
+        ],
+        "scenes": [
+          {
+            "startSec": 70.0,
+            "endSec": 74.0,
+            "type": "save",
+            "team": "home",
+            "description": "GKのビッグセーブ",
+            "importance": 0.8,
+            "suggestedClip": { "t0": 68.0, "t1": 76.0 }
+          }
+        ]
+      }
+    },
+    {
+      "scenario": "コーナーキック",
+      "output": {
+        "segments": [
+          {
+            "startSec": 120.0,
+            "endSec": 125.0,
+            "type": "set_piece",
+            "subtype": "corner",
+            "description": "ホームチームのコーナーキック",
+            "attackingTeam": "home",
+            "importance": 4,
+            "confidence": 0.95
+          }
+        ],
+        "events": [
+          {
+            "timestamp": 121.5,
+            "type": "setPiece",
+            "team": "home",
+            "player": "#11",
+            "zone": "attacking_third",
+            "details": { "setPieceType": "corner" },
+            "confidence": 0.95,
+            "visualEvidence": "コーナーフラッグからのキック"
+          }
+        ]
+      }
+    }
+  ],
+  "output_schema": {
+    "metadata": {
+      "totalDurationSec": "number",
+      "videoQuality": "good | fair | poor",
+      "qualityIssues": ["array of strings (optional)"]
+    },
+    "teams": {
+      "home": {
+        "primaryColor": "string (#RRGGBB)",
+        "secondaryColor": "string (#RRGGBB, optional)",
+        "goalkeeperColor": "string (#RRGGBB)",
+        "attackingDirection": "left_to_right | right_to_left"
+      },
+      "away": "same structure as home"
+    },
+    "segments": [
+      {
+        "startSec": "number (1 decimal)",
+        "endSec": "number (1 decimal)",
+        "type": "active_play | stoppage | set_piece | goal_moment | replay",
+        "subtype": "corner | free_kick | penalty | goal_kick | throw_in | kick_off | foul | injury | substitution | referee_decision | other (optional)",
+        "description": "string",
+        "attackingTeam": "home | away | null",
+        "importance": "number 1-5 (required for active_play)",
+        "confidence": "number 0.5-1.0",
+        "visualEvidence": "string"
+      }
+    ],
+    "events": [
+      {
+        "timestamp": "number (1 decimal)",
+        "type": "pass | carry | turnover | shot | setPiece",
+        "team": "home | away",
+        "player": "string (#10 format)",
+        "zone": "defensive_third | middle_third | attacking_third",
+        "details": "object (type-specific)",
+        "confidence": "number (0.3+ for shots, 0.5+ for others)",
+        "visualEvidence": "string"
+      }
+    ],
+    "scenes": [
+      {
+        "startSec": "number",
+        "endSec": "number (optional)",
+        "type": "goal | shot | save | chance | turnover | foul | card | setPiece | dribble | defense | other",
+        "team": "home | away (optional)",
+        "description": "string",
+        "importance": "number 0.0-1.0",
+        "confidence": "number 0.0-1.0",
+        "suggestedClip": {
+          "t0": "number",
+          "t1": "number"
+        }
+      }
+    ],
+    "players": {
+      "teams": {
+        "home": {
+          "primaryColor": "string",
+          "secondaryColor": "string (optional)",
+          "goalkeeperColor": "string"
+        },
+        "away": "same structure"
+      },
+      "players": [
+        {
+          "team": "home | away",
+          "jerseyNumber": "number | null",
+          "role": "player | goalkeeper",
+          "confidence": "number 0.0-1.0"
+        }
+      ],
+      "referees": [
+        {
+          "role": "main_referee | linesman | fourth_official",
+          "uniformColor": "string"
+        }
+      ]
+    },
+    "clipLabels": [
+      {
+        "timestamp": "number",
+        "label": "shot | chance | setPiece | dribble | defense | other",
+        "confidence": "number 0.0-1.0",
+        "title": "string (10-30 chars)",
+        "summary": "string (50-100 chars)",
+        "tags": ["array of strings"],
+        "coachTips": ["array of strings"]
+      }
+    ]
+  },
+  "constraints": {
+    "max_segments": 200,
+    "max_events": 500,
+    "max_scenes": 60,
+    "max_clip_labels": 60,
+    "min_segment_duration_sec": 2
+  },
+  "edge_cases": {
+    "description": "判断が難しい境界ケースの対処法",
+    "cases": [
+      {
+        "scenario": "クロスとシュートの区別",
+        "guidance": "ゴールを直接狙っている場合のみ shot。サイドから味方を狙う高いボールは pass (cross)。"
+      },
+      {
+        "scenario": "映像品質が悪い",
+        "guidance": "信頼度を下げて報告。シュートの可能性があれば 0.3 以上で報告。"
+      },
+      {
+        "scenario": "リプレイ映像",
+        "guidance": "segment として記録するが、events は検出しない。"
+      },
+      {
+        "scenario": "同時発生イベント",
+        "guidance": "全て報告。重複排除は後処理で行う。"
+      }
+    ]
+  }
+}

@@ -160,6 +160,22 @@
         { "fieldPath": "version", "order": "ASCENDING" },
         { "fieldPath": "scope", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "importantScenes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "version", "order": "ASCENDING" },
+        { "fieldPath": "importance", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "segments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "version", "order": "ASCENDING" },
+        { "fieldPath": "startSec", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

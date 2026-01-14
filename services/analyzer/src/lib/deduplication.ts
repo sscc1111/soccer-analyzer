@@ -176,12 +176,26 @@ export function mergeCluster(
   const weightedTimestamp =
     cluster.reduce((sum, e) => sum + e.absoluteTimestamp * e.confidence, 0) / totalConfidence;
 
-  // Merge details (prioritize high-confidence events)
+  // Merge details (prioritize high-confidence events, but ALWAYS preserve goals)
   const mergedDetails: Record<string, unknown> = {};
   const sortedByConfidence = [...cluster].sort((a, b) => b.confidence - a.confidence);
 
+  // Phase 2.8: ゴール検出を最優先
+  // shotResult="goal" のイベントがあれば、それを最優先で保持
+  const goalEvent = cluster.find((e) => e.type === "shot" && e.details?.shotResult === "goal");
+  if (goalEvent) {
+    mergedDetails.shotResult = "goal";
+    if (goalEvent.details?.shotType) {
+      mergedDetails.shotType = goalEvent.details.shotType;
+    }
+  }
+
   for (const event of sortedByConfidence) {
     for (const [key, value] of Object.entries(event.details)) {
+      // ゴール情報が既にマージされている場合はshotResultをスキップ
+      if (key === "shotResult" && mergedDetails.shotResult === "goal") {
+        continue;
+      }
       if (!(key in mergedDetails) && value !== undefined && value !== null) {
         mergedDetails[key] = value;
       }

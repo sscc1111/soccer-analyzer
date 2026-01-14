@@ -188,7 +188,7 @@
         "timestamp": "number (seconds)",
         "description": "string (30-50文字程度)",
         "importance": "number (0.0-1.0)",
-        "type": "goal | chance | save | foul | substitution | tactical_change | other"
+        "type": "goal | chance | chance_buildup | save | foul | substitution | tactical_change | set_piece | turnover | other"
       }
     ],
     "playerHighlights": [
