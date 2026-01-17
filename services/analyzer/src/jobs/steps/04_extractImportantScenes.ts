@@ -17,7 +17,7 @@ import { withRetry } from "../../lib/retry";
 
 // Prompt version for cache invalidation
 const SCENE_EXTRACTION_VERSION = "v1";
-const MAX_SCENES = 60;
+const MAX_SCENES = 60; // gemini-2.5-flashはmaxOutputTokens 65536対応
 
 // Response schema validation
 const SceneSchema = z.object({
@@ -230,9 +230,11 @@ async function extractScenesWithGemini(
     useCache,
   });
 
+  // 60シーン × 約200トークン/シーン = 最大約12000トークン + マージン
+  // gemini-2.5-flashはmaxOutputTokens 65536対応
   const generationConfig = {
     temperature: 0.3,
-    maxOutputTokens: 8192,
+    maxOutputTokens: 32768,
     responseMimeType: "application/json",
   };
 

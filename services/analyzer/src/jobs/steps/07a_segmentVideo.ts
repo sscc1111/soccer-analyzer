@@ -275,6 +275,7 @@ async function segmentVideoWithGemini(
   const useCache = cache.cacheId && cache.version !== "fallback";
   const generationConfig = {
     temperature: 0.1, // Lower temperature for consistent segmentation
+    maxOutputTokens: 16384, // 長い動画のセグメント出力用に余裕を持たせる
     responseMimeType: "application/json",
   };
 

@@ -184,12 +184,23 @@ export async function callGeminiApi(
     throw new Error(`Gemini API error ${response.status}: ${errorMsg}`);
   }
 
+  const finishReason = data.candidates?.[0]?.finishReason;
   logger.info("Gemini API call successful", {
     model: modelId,
     candidateCount: data.candidates?.length || 0,
     tokenCount: data.usageMetadata?.totalTokenCount,
     cachedTokens: data.usageMetadata?.cachedContentTokenCount,
+    outputTokens: data.usageMetadata?.candidatesTokenCount,
+    finishReason,
   });
+
+  // Warn if output was truncated
+  if (finishReason === "MAX_TOKENS") {
+    logger.warn("Gemini output was truncated due to maxOutputTokens limit", {
+      model: modelId,
+      outputTokens: data.usageMetadata?.candidatesTokenCount,
+    });
+  }
 
   // Record cost if context is provided
   if (costContext && data.usageMetadata) {
@@ -237,6 +248,18 @@ export function extractTextFromResponse(response: Gemini3Response): string {
   const candidates = response.candidates;
   if (!candidates || candidates.length === 0) {
     throw new Error("No candidates in Gemini response");
+  }
+
+  // Check finishReason - if MAX_TOKENS, output is truncated
+  const finishReason = candidates[0].finishReason;
+  if (finishReason === "MAX_TOKENS") {
+    throw new Error(
+      "Gemini output truncated due to maxOutputTokens limit. " +
+        "Increase maxOutputTokens or reduce prompt complexity."
+    );
+  }
+  if (finishReason && finishReason !== "STOP" && finishReason !== "END_TURN") {
+    logger.warn("Unexpected finishReason from Gemini", { finishReason });
   }
 
   const parts = candidates[0].content.parts;
@@ -310,7 +333,7 @@ export async function generateContent(options: {
     fileUri,
     mimeType = "video/mp4",
     temperature = 0.3,
-    maxOutputTokens = 8192,
+    maxOutputTokens = 32768, // デフォルトを増加（長い動画のJSON出力用）
     responseFormat = "json",
     costContext,
   } = options;

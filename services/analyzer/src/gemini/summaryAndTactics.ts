@@ -255,7 +255,7 @@ ${promptTemplate}`;
         prompt,
         // No fileUri - this is text-only Call 2
         temperature: 0.3,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 16384, // 長い試合サマリー用に増加
         responseFormat: "json",
         costContext,
       });
