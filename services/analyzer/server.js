@@ -28,8 +28,18 @@ const server = createServer(async (req, res) => {
       try {
         // Parse request body
         const parsedBody = body ? JSON.parse(body) : {};
+        const { matchId, jobId, type } = parsedBody;
 
-        // Create a minimal request/response wrapper
+        // Respond immediately to avoid timeout
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          message: 'Job started',
+          matchId,
+          jobId,
+        }));
+
+        // Create a minimal request/response wrapper for async processing
         const mockReq = {
           body: parsedBody,
           method: req.method,
@@ -37,6 +47,7 @@ const server = createServer(async (req, res) => {
           headers: req.headers,
         };
 
+        // Dummy response object for async processing (response already sent)
         const mockRes = {
           statusCode: 200,
           headers: {},
@@ -45,24 +56,26 @@ const server = createServer(async (req, res) => {
             return this;
           },
           json(data) {
-            res.writeHead(this.statusCode, {
-              'Content-Type': 'application/json',
-              ...this.headers,
-            });
-            res.end(JSON.stringify(data));
+            // Response already sent, just log
+            console.log('Handler completed:', JSON.stringify(data));
             return this;
           },
         };
 
-        // Call the handler
-        await handler(mockReq, mockRes);
+        // Run handler asynchronously (don't await)
+        handler(mockReq, mockRes).catch((error) => {
+          console.error('Async handler error:', error.message || error);
+        });
       } catch (error) {
         console.error('Error processing request:', error);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          ok: false,
-          error: error.message || 'Internal server error',
-        }));
+        // Only send error response if headers not sent yet
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            ok: false,
+            error: error.message || 'Internal server error',
+          }));
+        }
       }
     });
 
