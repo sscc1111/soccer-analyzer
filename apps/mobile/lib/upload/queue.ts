@@ -1,13 +1,43 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { ProcessingMode } from "@soccer/shared";
+import type { ProcessingMode, VideoType } from "@soccer/shared";
 
 const QUEUE_KEY = "@soccer-analyzer/upload-queue";
+
+// P0: Race condition防止用のロック機構
+let queueLock: Promise<void> | null = null;
+
+/**
+ * P0: 排他制御付きでqueue操作を実行
+ * 並行実行時のread-modify-writeによるデータ損失を防ぐ
+ */
+async function withQueueLock<T>(operation: () => Promise<T>): Promise<T> {
+  // 既存のロックが解放されるまで待機
+  while (queueLock) {
+    await queueLock;
+  }
+
+  let resolveLock: () => void;
+  queueLock = new Promise((resolve) => {
+    resolveLock = resolve;
+  });
+
+  try {
+    return await operation();
+  } finally {
+    queueLock = null;
+    resolveLock!();
+  }
+}
 
 export type QueuedUpload = {
   id: string;
   matchId: string;
   videoUri: string;
   processingMode: ProcessingMode;
+  /** Video type for subcollection uploads */
+  videoType: VideoType;
+  /** Video document ID in Firestore (if created) */
+  videoId?: string;
   queuedAt: string;
   retryCount: number;
   status: "pending" | "uploading" | "completed" | "failed";
@@ -22,20 +52,23 @@ export type QueuedUpload = {
 export async function addToQueue(
   upload: Omit<QueuedUpload, "id" | "queuedAt" | "retryCount" | "status">
 ): Promise<string> {
-  const queue = await getQueue();
+  // P0: 排他制御でrace conditionを防止
+  return withQueueLock(async () => {
+    const queue = await getQueue();
 
-  const newUpload: QueuedUpload = {
-    ...upload,
-    id: generateUploadId(),
-    queuedAt: new Date().toISOString(),
-    retryCount: 0,
-    status: "pending",
-  };
+    const newUpload: QueuedUpload = {
+      ...upload,
+      id: generateUploadId(),
+      queuedAt: new Date().toISOString(),
+      retryCount: 0,
+      status: "pending",
+    };
 
-  queue.push(newUpload);
-  await saveQueue(queue);
+    queue.push(newUpload);
+    await saveQueue(queue);
 
-  return newUpload.id;
+    return newUpload.id;
+  });
 }
 
 /**
@@ -60,9 +93,12 @@ export async function getQueue(): Promise<QueuedUpload[]> {
  * @param id - Upload ID to remove
  */
 export async function removeFromQueue(id: string): Promise<void> {
-  const queue = await getQueue();
-  const filtered = queue.filter((item) => item.id !== id);
-  await saveQueue(filtered);
+  // P0: 排他制御でrace conditionを防止
+  return withQueueLock(async () => {
+    const queue = await getQueue();
+    const filtered = queue.filter((item) => item.id !== id);
+    await saveQueue(filtered);
+  });
 }
 
 /**
@@ -74,15 +110,18 @@ export async function updateQueueItem(
   id: string,
   updates: Partial<Omit<QueuedUpload, "id">>
 ): Promise<void> {
-  const queue = await getQueue();
-  const index = queue.findIndex((item) => item.id === id);
+  // P0: 排他制御でrace conditionを防止
+  return withQueueLock(async () => {
+    const queue = await getQueue();
+    const index = queue.findIndex((item) => item.id === id);
 
-  if (index === -1) {
-    throw new Error(`Upload with id ${id} not found in queue`);
-  }
+    if (index === -1) {
+      throw new Error(`Upload with id ${id} not found in queue`);
+    }
 
-  queue[index] = { ...queue[index], ...updates };
-  await saveQueue(queue);
+    queue[index] = { ...queue[index], ...updates };
+    await saveQueue(queue);
+  });
 }
 
 /**

@@ -28,6 +28,8 @@ export const SUMMARY_TACTICS_VERSION = "summary_tactics_v1";
 
 export type SummaryAndTacticsStepOptions = {
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   version: string;
   logger?: ILogger;
 };

@@ -2,6 +2,10 @@ export type EventLabel = "shot" | "chance" | "setPiece" | "dribble" | "defense" 
 
 export type EventDoc = {
   eventId: string;
+  /** Match ID this event belongs to */
+  matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   clipId: string;
   label: EventLabel;
   confidence: number;
@@ -12,6 +16,8 @@ export type EventDoc = {
   };
   source: "gemini" | "manual" | "hybrid";
   createdAt: string;
+  /** Whether this event was merged from first and second half */
+  mergedFromHalves?: boolean;
 };
 
 // Multi-pass analysis types
@@ -21,6 +27,8 @@ export type EventZone = "defensive_third" | "middle_third" | "attacking_third";
 export interface RawEvent {
   eventId: string;
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   windowId: string;
   type: "pass" | "carry" | "turnover" | "shot" | "setPiece";
   timestamp: number;

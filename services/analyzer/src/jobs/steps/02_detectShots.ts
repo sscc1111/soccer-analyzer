@@ -4,6 +4,44 @@ import { detectSceneCuts, extractThumbnail, getMotionScores, probeVideo } from "
 import { safeId } from "../../lib/ids";
 import { downloadToTmp, uploadFromTmp } from "../../lib/storage";
 
+/**
+ * Get video storage path from videoId (subcollection) or fallback to legacy match.video
+ */
+async function getVideoStoragePath(
+  matchRef: FirebaseFirestore.DocumentReference,
+  videoId?: string
+): Promise<string | null> {
+  if (videoId) {
+    // New: Get from videos subcollection
+    const videoDoc = await matchRef.collection("videos").doc(videoId).get();
+    if (videoDoc.exists) {
+      return videoDoc.data()?.storagePath ?? null;
+    }
+  }
+  // Fallback: Get from legacy match.video field
+  const matchDoc = await matchRef.get();
+  return matchDoc.data()?.video?.storagePath ?? null;
+}
+
+/**
+ * Get video duration from videoId (subcollection) or fallback to legacy match.video
+ */
+async function getVideoDuration(
+  matchRef: FirebaseFirestore.DocumentReference,
+  videoId?: string
+): Promise<number | undefined> {
+  if (videoId) {
+    // New: Get from videos subcollection
+    const videoDoc = await matchRef.collection("videos").doc(videoId).get();
+    if (videoDoc.exists) {
+      return videoDoc.data()?.durationSec;
+    }
+  }
+  // Fallback: Get from legacy match.video field
+  const matchDoc = await matchRef.get();
+  return matchDoc.data()?.video?.durationSec;
+}
+
 type ShotDoc = {
   shotId: string;
   t0: number;
@@ -21,16 +59,22 @@ const MIN_SHOT_SEC = 2;
 const MOTION_FPS = 1;
 const MOTION_THRESHOLD = 0.12;
 
-export async function stepDetectShots({ matchId, version }: { matchId: string; version: string }) {
+type DetectShotsOptions = {
+  matchId: string;
+  videoId?: string;
+  version: string;
+};
+
+export async function stepDetectShots({ matchId, videoId, version }: DetectShotsOptions) {
   const db = getDb();
   const matchRef = db.collection("matches").doc(matchId);
   const matchSnap = await matchRef.get();
   if (!matchSnap.exists) throw new Error(`match not found: ${matchId}`);
 
-  const match = matchSnap.data() as { video?: { storagePath?: string; durationSec?: number } } | undefined;
-  const storagePath = match?.video?.storagePath;
-  let durationSec = match?.video?.durationSec ?? 0;
+  const storagePath = await getVideoStoragePath(matchRef, videoId);
   if (!storagePath) throw new Error("video.storagePath missing");
+
+  let durationSec = (await getVideoDuration(matchRef, videoId)) ?? 0;
 
   const existing = await matchRef
     .collection("shots")

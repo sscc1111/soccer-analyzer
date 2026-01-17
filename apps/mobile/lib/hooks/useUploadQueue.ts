@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { ProcessingMode } from "@soccer/shared";
+import type { ProcessingMode, VideoType } from "@soccer/shared";
 import { useNetworkState } from "./useNetworkState";
 import {
   addToQueue,
@@ -9,6 +9,8 @@ import {
   getPendingUploads,
   type QueuedUpload,
 } from "../upload/queue";
+import { uploadVideoToMatch } from "../firebase/storage";
+import { createVideoDoc, updateVideoDoc, deleteVideoDoc } from "./useVideos";
 
 export type UseUploadQueueReturn = {
   /** Current queue items */
@@ -16,7 +18,7 @@ export type UseUploadQueueReturn = {
   /** Whether queue is currently processing uploads */
   isProcessing: boolean;
   /** Add an upload to the queue */
-  addUpload: (matchId: string, videoUri: string, mode: ProcessingMode) => Promise<string>;
+  addUpload: (matchId: string, videoUri: string, mode: ProcessingMode, videoType?: VideoType) => Promise<string>;
   /** Cancel/remove an upload from the queue */
   cancelUpload: (id: string) => Promise<void>;
   /** Retry a failed upload */
@@ -91,11 +93,12 @@ export function useUploadQueue(): UseUploadQueueReturn {
    * Add an upload to the queue
    */
   const addUpload = useCallback(
-    async (matchId: string, videoUri: string, mode: ProcessingMode) => {
+    async (matchId: string, videoUri: string, mode: ProcessingMode, videoType: VideoType = "single") => {
       const uploadId = await addToQueue({
         matchId,
         videoUri,
         processingMode: mode,
+        videoType,
       });
 
       await refreshQueue();
@@ -220,36 +223,50 @@ export function useUploadQueue(): UseUploadQueueReturn {
 }
 
 /**
- * Placeholder upload function - to be replaced with actual Firebase upload
- * This simulates the upload process for now
+ * Execute video upload with Firebase integration
+ * Creates video document, uploads to storage, and updates metadata
  */
 async function uploadVideoWithRetry(upload: QueuedUpload): Promise<void> {
-  // TODO: Replace with actual uploadVideo call from firebase/storage.ts
-  // For now, this is a placeholder that simulates an upload
+  const { matchId, videoUri, videoType } = upload;
 
-  console.log(`[Upload Queue] Processing upload ${upload.id} for match ${upload.matchId}`);
+  console.log(`[Upload Queue] Processing upload ${upload.id} for match ${matchId}, type=${videoType}`);
 
-  // Simulate upload with random success/failure for testing
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      // Simulate 80% success rate for testing
-      if (Math.random() > 0.2) {
-        console.log(`[Upload Queue] Upload ${upload.id} completed successfully`);
-        resolve();
-      } else {
-        console.log(`[Upload Queue] Upload ${upload.id} failed`);
-        reject(new Error("Simulated upload failure"));
+  // Step 1: Create video document in Firestore with initial status
+  const videoId = await createVideoDoc(matchId, {
+    type: videoType,
+    storagePath: "", // Will be updated after upload
+    analysis: { status: "idle" },
+  });
+
+  console.log(`[Upload Queue] Created video doc: ${videoId}`);
+
+  try {
+    // Step 2: Upload video to Firebase Storage
+    const { storagePath } = await uploadVideoToMatch(
+      matchId,
+      videoId,
+      videoUri,
+      videoType,
+      (progress) => {
+        console.log(`[Upload Queue] Upload progress: ${progress.progress.toFixed(1)}%`);
       }
-    }, 2000);
-  });
+    );
 
-  // Real implementation would be:
-  /*
-  import { uploadVideo } from "../firebase/storage";
+    console.log(`[Upload Queue] Video uploaded to: ${storagePath}`);
 
-  await uploadVideo(upload.matchId, upload.videoUri, (progress) => {
-    console.log(`Upload progress: ${progress.progress}%`);
-    // Optionally update queue item with progress
-  });
-  */
+    // Step 3: Update video document with storage path
+    await updateVideoDoc(matchId, videoId, { storagePath });
+
+    console.log(`[Upload Queue] Upload ${upload.id} completed successfully`);
+  } catch (error) {
+    // P0修正: アップロード失敗時に孤立したvideoDocをクリーンアップ
+    console.error(`[Upload Queue] Upload failed, cleaning up video doc ${videoId}`);
+    try {
+      await deleteVideoDoc(matchId, videoId);
+      console.log(`[Upload Queue] Cleaned up orphaned videoDoc: ${videoId}`);
+    } catch (cleanupErr) {
+      console.error(`[Upload Queue] Failed to cleanup video doc:`, cleanupErr);
+    }
+    throw error;
+  }
 }

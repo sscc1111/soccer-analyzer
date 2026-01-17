@@ -73,8 +73,11 @@ export default function UploadScreen() {
       const defaults = await getDefaultSettings();
 
       // Build initial settings from defaults
+      // Note: upload.tsx is for single video upload flow
+      // For split videos (first/second half), use create-match.tsx flow
       const initialSettings: MatchSettings = {
         processingMode,
+        videoConfiguration: "single",
       };
       // Apply game format from defaults (critical for 8-player format analysis)
       if (defaults.gameFormat) {
@@ -310,6 +313,25 @@ export default function UploadScreen() {
               </CardContent>
             </Card>
           )}
+
+          {/* Info Card */}
+          <Card className="mb-4 border-primary/50">
+            <CardContent className="py-3">
+              <Text className="text-foreground text-sm mb-1 font-medium">
+                Alternative: Create Match Without Video
+              </Text>
+              <Text className="text-muted-foreground text-xs mb-3">
+                You can create a match first and upload videos later. This is useful if you want to set up team settings before uploading.
+              </Text>
+              <Button
+                variant="outline"
+                onPress={() => router.push("/create-match")}
+                disabled={uploadState === "uploading"}
+              >
+                Create Match Only
+              </Button>
+            </CardContent>
+          </Card>
 
           <View className="flex-row gap-3 mt-4 mb-8">
             <Button

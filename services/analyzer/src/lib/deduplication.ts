@@ -6,12 +6,17 @@
  * are merged into a single representative event.
  */
 
-import type { TeamId } from "@soccer/shared";
+import type { TeamId, Point2D } from "@soccer/shared";
+import type { PositionSource } from "./zoneToCoordinate";
 
 /**
  * Raw event from a single analysis window
  */
 export interface RawEvent {
+  /** Match ID this event belongs to */
+  matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   /** ID of the time window this event was detected in */
   windowId: string;
   /** Timestamp relative to the window start (seconds) */
@@ -26,6 +31,10 @@ export interface RawEvent {
   player?: string;
   /** Field zone where event occurred */
   zone?: "defensive_third" | "middle_third" | "attacking_third";
+  /** Position from Gemini output (normalized 0-1 coordinates) */
+  position?: Point2D;
+  /** Position confidence from Gemini (0-1) */
+  positionConfidence?: number;
   /** Type-specific event details */
   details: Record<string, unknown>;
   /** Detection confidence (0-1) */
@@ -42,6 +51,12 @@ export interface DeduplicatedEvent extends Omit<RawEvent, "windowId" | "relative
   mergedFromWindows: string[];
   /** Adjusted confidence after merging */
   adjustedConfidence: number;
+  /** Final merged position (normalized 0-1 coordinates) */
+  mergedPosition?: Point2D;
+  /** Source of the position data */
+  positionSource?: PositionSource;
+  /** Final position confidence after merging */
+  mergedPositionConfidence?: number;
 }
 
 /**
@@ -65,7 +80,8 @@ export interface DeduplicationConfig {
  * - setPiece: 2.5秒
  */
 export const TYPE_SPECIFIC_THRESHOLDS: Record<string, number> = {
-  shot: 1.0,
+  // Phase 2.9: shotの閾値を2.0秒に増加（ウィンドウオーバーラップでの重複検出を防止）
+  shot: 2.0,
   pass: 2.0,
   carry: 3.0,
   turnover: 2.0,
@@ -163,6 +179,9 @@ export function mergeCluster(
       ...rest,
       mergedFromWindows: [windowId],
       adjustedConfidence: event.confidence,
+      mergedPosition: event.position,
+      positionSource: event.position ? "gemini_output" : undefined,
+      mergedPositionConfidence: event.positionConfidence,
     };
   }
 
@@ -223,6 +242,39 @@ export function mergeCluster(
   // Merge zone info (prefer from highest confidence)
   const zone = baseEvent.zone || cluster.find((e) => e.zone)?.zone;
 
+  // Merge position info (weighted by positionConfidence or confidence)
+  const eventsWithPosition = cluster.filter((e) => e.position);
+  let mergedPosition: Point2D | undefined;
+  let positionSource: PositionSource | undefined;
+  let mergedPositionConfidence: number | undefined;
+
+  if (eventsWithPosition.length > 0) {
+    // Calculate weighted average position
+    const totalPosConf = eventsWithPosition.reduce(
+      (sum, e) => sum + (e.positionConfidence ?? e.confidence),
+      0
+    );
+
+    if (totalPosConf > 0) {
+      const weightedX = eventsWithPosition.reduce(
+        (sum, e) => sum + (e.position?.x ?? 0) * (e.positionConfidence ?? e.confidence),
+        0
+      ) / totalPosConf;
+
+      const weightedY = eventsWithPosition.reduce(
+        (sum, e) => sum + (e.position?.y ?? 0) * (e.positionConfidence ?? e.confidence),
+        0
+      ) / totalPosConf;
+
+      mergedPosition = { x: weightedX, y: weightedY };
+      positionSource = "gemini_output";
+
+      // Boost position confidence for multiple detections
+      const maxPosConf = Math.max(...eventsWithPosition.map((e) => e.positionConfidence ?? e.confidence));
+      mergedPositionConfidence = Math.min(1.0, maxPosConf + 0.1 * (eventsWithPosition.length - 1));
+    }
+  }
+
   const { windowId, relativeTimestamp, ...baseRest } = baseEvent;
 
   return {
@@ -234,6 +286,9 @@ export function mergeCluster(
     mergedFromWindows: cluster.map((e) => e.windowId),
     adjustedConfidence,
     visualEvidence: mergedVisualEvidence,
+    mergedPosition,
+    positionSource,
+    mergedPositionConfidence,
   };
 }
 

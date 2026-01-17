@@ -15,10 +15,14 @@ export function useMatch(matchId: string | null): UseMatchResult {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    // P1修正: アンマウント後のstate更新を防ぐフラグ
+    let mounted = true;
+
     if (!matchId) {
       setMatch(null);
       setLoading(false);
-      return;
+      setError(null);
+      return () => { mounted = false; };
     }
 
     const matchRef = doc(db, "matches", matchId);
@@ -26,6 +30,7 @@ export function useMatch(matchId: string | null): UseMatchResult {
     const unsubscribe = onSnapshot(
       matchRef,
       (snapshot) => {
+        if (!mounted) return;
         if (snapshot.exists()) {
           setMatch({
             matchId: snapshot.id,
@@ -37,12 +42,16 @@ export function useMatch(matchId: string | null): UseMatchResult {
         setLoading(false);
       },
       (err) => {
+        if (!mounted) return;
         setError(err);
         setLoading(false);
       }
     );
 
-    return unsubscribe;
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, [matchId]);
 
   return { match, loading, error };

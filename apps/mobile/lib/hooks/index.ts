@@ -29,3 +29,4 @@ export type { UseUploadQueueReturn } from "./useUploadQueue";
 export { useTacticalAnalysis } from "./useTacticalAnalysis";
 export { useMatchSummary } from "./useMatchSummary";
 export { useStorageUrl } from "./useStorageUrl";
+export { useVideos, useMatchVideos, createVideoDoc, updateVideoDoc, deleteVideoDoc } from "./useVideos";

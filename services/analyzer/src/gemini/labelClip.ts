@@ -41,7 +41,7 @@ export async function labelClipWithGemini(clip: LabelClipInput) {
   // Phase 3: Try to use context cache for the full video if matchId is provided
   let cache: GeminiCacheDoc | null = null;
   if (clip.matchId) {
-    cache = await getValidCacheOrFallback(clip.matchId, "label_clips");
+    cache = await getValidCacheOrFallback(clip.matchId, undefined, "label_clips");
   }
 
   const useCache = cache?.cacheId && cache.version !== "fallback";
@@ -352,7 +352,7 @@ export async function labelClipBatchWithGemini(
   const prompt = await loadPrompt();
 
   // Phase 3: Try to use context cache for the full video
-  const cache = await getValidCacheOrFallback(matchId, "label_clips_batch");
+  const cache = await getValidCacheOrFallback(matchId, undefined, "label_clips_batch");
   const useCache = cache?.cacheId && cache.version !== "fallback";
 
   // Phase 3: If cache is available, use cached full video with batch timestamp hints

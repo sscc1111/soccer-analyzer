@@ -136,14 +136,36 @@ export async function callGeminiApi(
     usingCache: !!request.cachedContent,
   });
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(request),
-  });
+  // P1修正: タイムアウト設定（5分）でAPIハング防止
+  const GEMINI_API_TIMEOUT_MS = 300_000; // 5 minutes
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), GEMINI_API_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+  } catch (fetchError) {
+    clearTimeout(timeoutId);
+    if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+      logger.error("Gemini API call timed out", {
+        endpoint,
+        model: modelId,
+        timeoutMs: GEMINI_API_TIMEOUT_MS,
+      });
+      throw new Error(`Gemini API call timed out after ${GEMINI_API_TIMEOUT_MS}ms`);
+    }
+    throw fetchError;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   // Get response as text first to handle non-JSON responses
   const responseText = await response.text();
@@ -237,6 +259,12 @@ export function extractTextFromResponse(response: Gemini3Response): string {
   const candidates = response.candidates;
   if (!candidates || candidates.length === 0) {
     throw new Error("No candidates in Gemini response");
+  }
+
+  // Check if output was truncated due to token limit
+  const finishReason = candidates[0].finishReason;
+  if (finishReason === "MAX_TOKENS") {
+    throw new Error("Output truncated due to MAX_TOKENS limit - increase maxOutputTokens or reduce output size");
   }
 
   const parts = candidates[0].content.parts;

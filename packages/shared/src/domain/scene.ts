@@ -33,6 +33,8 @@ export type SceneTeam = "home" | "away" | "unknown";
 export type ImportantSceneDoc = {
   sceneId: string;
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   /** Start time in seconds */
   startSec: number;
   /** End time in seconds */

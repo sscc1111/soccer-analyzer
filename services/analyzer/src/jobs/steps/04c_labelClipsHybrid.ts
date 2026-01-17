@@ -28,6 +28,8 @@ import { defaultLogger as logger, ILogger } from "../../lib/logger";
 
 export interface LabelClipsHybridOptions {
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   version: string;
   logger?: ILogger;
 }

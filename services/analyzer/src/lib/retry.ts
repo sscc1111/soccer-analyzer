@@ -50,6 +50,7 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Execute a function with timeout
+ * P0修正: settled フラグで二重resolve/reject防止
  */
 async function withTimeout<T>(
   fn: () => Promise<T>,
@@ -57,18 +58,29 @@ async function withTimeout<T>(
   operationName?: string
 ): Promise<T> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+
     const timer = setTimeout(() => {
-      reject(new TimeoutError(operationName || "operation", timeoutMs));
+      if (!settled) {
+        settled = true;
+        reject(new TimeoutError(operationName || "operation", timeoutMs));
+      }
     }, timeoutMs);
 
     fn()
       .then((result) => {
-        clearTimeout(timer);
-        resolve(result);
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(result);
+        }
       })
       .catch((error) => {
-        clearTimeout(timer);
-        reject(error);
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        }
       });
   });
 }

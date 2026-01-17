@@ -9,11 +9,12 @@ import {
   updateDoc,
   serverTimestamp,
   Timestamp,
+  increment,
 } from "firebase/firestore";
 import { db } from "../firebase/firestore";
 import { useDeviceId } from "./useDeviceId";
 import { getDeviceId } from "../deviceId";
-import type { MatchDoc } from "@soccer/shared";
+import type { MatchDoc, VideoDoc, VideoType } from "@soccer/shared";
 
 /**
  * Convert Firestore Timestamp to ISO string
@@ -47,15 +48,18 @@ export function useMatches(): UseMatchesResult {
   const { deviceId, loading: deviceIdLoading } = useDeviceId();
 
   useEffect(() => {
+    // P1修正: アンマウント後のstate更新を防ぐフラグ
+    let mounted = true;
+
     // Wait for device ID to be ready
     if (deviceIdLoading) {
-      return;
+      return () => { mounted = false; };
     }
 
     if (!deviceId) {
       setError(new Error("Failed to get device ID"));
       setLoading(false);
-      return;
+      return () => { mounted = false; };
     }
 
     // Query matches by deviceId (persists across app restarts)
@@ -68,6 +72,8 @@ export function useMatches(): UseMatchesResult {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
+        if (!mounted) return;
+
         const docs = snapshot.docs.map((d) => {
           const data = d.data();
           return {
@@ -108,13 +114,17 @@ export function useMatches(): UseMatchesResult {
         setLoading(false);
       },
       (err) => {
+        if (!mounted) return;
         console.error("Error loading matches:", err);
         setError(err);
         setLoading(false);
       }
     );
 
-    return unsubscribe;
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, [deviceId, deviceIdLoading]);
 
   return { matches, loading, error };
@@ -141,4 +151,73 @@ export async function updateMatch(
     ...data,
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * Add a video to the match's videos subcollection
+ * Creates a VideoDoc in matches/{matchId}/videos/{videoId}
+ * @param matchId - The match ID
+ * @param videoUri - Local file URI of the video
+ * @param type - Video type (firstHalf, secondHalf, single)
+ * @param metadata - Optional video metadata (duration, width, height, fps)
+ * @returns The created video document ID
+ */
+export async function addVideoToMatch(
+  matchId: string,
+  videoUri: string,
+  type: VideoType,
+  metadata?: {
+    durationSec?: number;
+    width?: number;
+    height?: number;
+    fps?: number;
+  }
+): Promise<string> {
+  // Create video document in subcollection
+  const videoRef = doc(collection(db, "matches", matchId, "videos"));
+  const videoId = videoRef.id;
+
+  // Storage path will be set when upload completes
+  const storagePath = `matches/${matchId}/videos/${type}.mp4`;
+
+  const videoDoc: Omit<VideoDoc, "videoId"> = {
+    matchId,
+    type,
+    storagePath,
+    uploadedAt: new Date().toISOString(),
+    ...metadata,
+    analysis: {
+      status: "idle",
+    },
+  };
+
+  await setDoc(videoRef, {
+    ...videoDoc,
+    uploadedAt: serverTimestamp(),
+  });
+
+  // Update match document to track video count and uploaded status
+  const matchRef = doc(db, "matches", matchId);
+  await updateDoc(matchRef, {
+    videoCount: increment(1),
+    [`videosUploaded.${type}`]: true,
+    updatedAt: serverTimestamp(),
+  });
+
+  return videoId;
+}
+
+/**
+ * Update video document in subcollection
+ * @param matchId - The match ID
+ * @param videoId - The video document ID
+ * @param data - Partial video document data to update
+ */
+export async function updateVideo(
+  matchId: string,
+  videoId: string,
+  data: Partial<Omit<VideoDoc, "videoId" | "matchId">>
+): Promise<void> {
+  const videoRef = doc(db, "matches", matchId, "videos", videoId);
+  await updateDoc(videoRef, data);
 }

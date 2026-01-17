@@ -3,6 +3,7 @@ export * from "./version";
 export * from "./domain/match";
 export * from "./domain/clip";
 export * from "./domain/event";
+export * from "./domain/job";
 export * from "./domain/stats";
 export * from "./domain/settings";
 export * from "./domain/tracking";

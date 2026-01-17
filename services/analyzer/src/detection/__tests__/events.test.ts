@@ -796,11 +796,12 @@ describe("extractPendingReviews", () => {
       turnoverEvents: [],
     };
 
-    const pendingReviews = extractPendingReviews(events);
+    const pendingReviews = extractPendingReviews(events, "match-1");
 
     expect(pendingReviews).toHaveLength(1);
     expect(pendingReviews[0].eventId).toBe("pass_1");
     expect(pendingReviews[0].eventType).toBe("pass");
+    expect(pendingReviews[0].matchId).toBe("match-1");
     expect(pendingReviews[0].resolved).toBe(false);
     expect(pendingReviews[0].candidates).toHaveLength(2);
   });
@@ -864,12 +865,13 @@ describe("extractPendingReviews", () => {
       ],
     };
 
-    const pendingReviews = extractPendingReviews(events);
+    const pendingReviews = extractPendingReviews(events, "match-1");
 
     // Should only include "lost" type
     expect(pendingReviews).toHaveLength(1);
     expect(pendingReviews[0].eventId).toBe("turnover_lost_1");
     expect(pendingReviews[0].eventType).toBe("turnover");
+    expect(pendingReviews[0].matchId).toBe("match-1");
   });
 
   it("should return empty array when no events need review", () => {
@@ -903,7 +905,7 @@ describe("extractPendingReviews", () => {
       turnoverEvents: [],
     };
 
-    const pendingReviews = extractPendingReviews(events);
+    const pendingReviews = extractPendingReviews(events, "match-1");
     expect(pendingReviews).toHaveLength(0);
   });
 });

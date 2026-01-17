@@ -15,7 +15,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { callGeminiApi, callGeminiApiWithCache, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
-import type { MatchSummaryDoc, TacticalAnalysisDoc, KeyMoment, PlayerHighlight } from "@soccer/shared";
+import type { MatchSummaryDoc, TacticalAnalysisDoc, KeyMoment, PlayerHighlight, GameFormat } from "@soccer/shared";
+import { GAME_FORMAT_INFO } from "@soccer/shared";
 import { getDb } from "../../firebase/admin";
 import { getValidCacheOrFallback, getCacheManager, type GeminiCacheDoc } from "../../gemini/cacheManager";
 import { defaultLogger as logger, ILogger } from "../../lib/logger";
@@ -62,6 +63,7 @@ type SummaryResponse = z.infer<typeof SummaryResponseSchema>;
 
 export type GenerateMatchSummaryOptions = {
   matchId: string;
+  videoId?: string;
   version: string;
   logger?: ILogger;
 };
@@ -86,11 +88,11 @@ async function loadPrompt() {
 export async function stepGenerateMatchSummary(
   options: GenerateMatchSummaryOptions
 ): Promise<GenerateMatchSummaryResult> {
-  const { matchId, version } = options;
+  const { matchId, videoId, version } = options;
   const log = options.logger ?? logger;
   const stepLogger = log.child ? log.child({ step: "generate_match_summary" }) : log;
 
-  stepLogger.info("Starting match summary generation", { matchId, version });
+  stepLogger.info("Starting match summary generation", { matchId, videoId, version });
 
   const db = getDb();
   const matchRef = db.collection("matches").doc(matchId);
@@ -104,7 +106,7 @@ export async function stepGenerateMatchSummary(
 
   // Get cache info (with fallback to direct file URI)
   // Phase 3.1: Pass step name for cache hit/miss tracking
-  const cache = await getValidCacheOrFallback(matchId, "generate_match_summary");
+  const cache = await getValidCacheOrFallback(matchId, options.videoId, "generate_match_summary");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot generate match summary", { matchId });
@@ -122,19 +124,46 @@ export async function stepGenerateMatchSummary(
     hasCaching: cache.version !== "fallback",
   });
 
+  // Get match settings for game format
+  const matchSnap = await matchRef.get();
+  const matchData = matchSnap.data();
+  const gameFormat: GameFormat = matchData?.settings?.gameFormat || "eleven";
+  const formatInfo = GAME_FORMAT_INFO[gameFormat];
+
+  stepLogger.info("Using game format for summary", {
+    matchId,
+    gameFormat,
+    formatLabel: formatInfo.labelJa,
+    playersPerSide: formatInfo.players / 2,
+  });
+
   // Get tactical analysis for context
   const tacticalSnap = await matchRef.collection("tactical").doc("current").get();
   const tacticalAnalysis = tacticalSnap.exists
     ? (tacticalSnap.data() as TacticalAnalysisDoc)
     : null;
 
-  // Get event statistics (use correct collection names with version filter)
-  const [shotEventsSnap, passesSnap, turnoversSnap, clipsSnap] = await Promise.all([
+  // Get event statistics and video duration (use correct collection names with version filter)
+  const [shotEventsSnap, passesSnap, turnoversSnap, clipsSnap, videoSnap] = await Promise.all([
     matchRef.collection("shotEvents").where("version", "==", version).get(),
     matchRef.collection("passEvents").where("version", "==", version).get(),
     matchRef.collection("turnoverEvents").where("version", "==", version).get(),
     matchRef.collection("clips").where("version", "==", version).get(),
+    // Phase 2.10: Get video document for duration
+    options.videoId
+      ? matchRef.collection("videos").doc(options.videoId).get()
+      : matchRef.collection("videos").limit(1).get().then(snap => snap.docs[0] || null),
   ]);
+
+  // Phase 2.10: Extract video duration for timestamp validation
+  const videoDoc = videoSnap && 'data' in videoSnap ? videoSnap : null;
+  const videoDurationSec = videoDoc?.data?.()?.durationSec || 0;
+
+  stepLogger.info("Video duration for summary", {
+    matchId,
+    videoDurationSec,
+    hasVideoDoc: !!videoDoc,
+  });
 
   // Phase 2.8: shotEventsからゴール数を計算（Gemini推測に頼らない）
   const goalsByTeam = {
@@ -168,6 +197,8 @@ export async function stepGenerateMatchSummary(
     totalPasses: passesSnap.size,
     totalTurnovers: turnoversSnap.size,
     calculatedScore: goalsByTeam,
+    // Phase 2.10: Include video duration for timestamp validation
+    videoDurationSec,
   };
 
   // Build clips array for timestamp matching
@@ -181,7 +212,7 @@ export async function stepGenerateMatchSummary(
   });
 
   const prompt = await loadPrompt();
-  const result = await generateSummaryWithGemini(cache, prompt, tacticalAnalysis, eventStats, matchId, stepLogger);
+  const result = await generateSummaryWithGemini(cache, prompt, tacticalAnalysis, eventStats, matchId, gameFormat, stepLogger);
 
   // Match keyMoments to clips by timestamp
   const TIMESTAMP_TOLERANCE = 5; // seconds
@@ -224,6 +255,7 @@ export async function stepGenerateMatchSummary(
   // Save match summary
   const summaryDoc: MatchSummaryDoc = {
     matchId,
+    videoId,
     version,
     headline: result.headline,
     narrative: result.narrative,
@@ -260,8 +292,9 @@ async function generateSummaryWithGemini(
   cache: GeminiCacheDoc,
   prompt: { task: string; instructions: string; output_schema: Record<string, unknown> },
   tacticalAnalysis: TacticalAnalysisDoc | null,
-  eventStats: { totalShots: number; totalPasses: number; totalTurnovers: number },
+  eventStats: { totalShots: number; totalPasses: number; totalTurnovers: number; videoDurationSec?: number },
   matchId: string,
+  gameFormat: GameFormat,
   log: ILogger
 ): Promise<SummaryResponse> {
   const projectId = process.env.GCP_PROJECT_ID;
@@ -269,7 +302,33 @@ async function generateSummaryWithGemini(
 
   const modelId = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
 
+  // Build format context for game format awareness
+  const formatInfo = GAME_FORMAT_INFO[gameFormat];
+  const formatContext = [
+    `## 試合フォーマット: ${formatInfo.labelJa}`,
+    `- 各チームの選手数: ${formatInfo.players / 2}人（GK含む）`,
+    `- フィールドプレイヤー: ${formatInfo.outfieldPlayers}人`,
+    gameFormat === "eight" ? "- 8人制少年サッカー（15-20分ハーフが一般的）" : "",
+    gameFormat === "five" ? "- フットサル（10-20分ハーフが一般的）" : "",
+    gameFormat === "eleven" ? "- 11人制サッカー（45分ハーフが一般的）" : "",
+    "- 重要: 試合形式に合わせたサマリーを生成してください",
+  ].filter(Boolean).join("\n");
+
+  // Phase 2.10: Add video duration constraint to prevent out-of-bounds timestamps
+  const durationContext = eventStats.videoDurationSec && eventStats.videoDurationSec > 0
+    ? [
+        "## ★★★ 重要: 動画長の制約 ★★★",
+        `**この動画は ${eventStats.videoDurationSec.toFixed(1)} 秒です。**`,
+        `- すべてのタイムスタンプは 0 〜 ${eventStats.videoDurationSec.toFixed(1)} 秒の範囲内で指定してください`,
+        `- ${eventStats.videoDurationSec.toFixed(1)} 秒を超えるタイムスタンプは無効です`,
+        "",
+      ].join("\n")
+    : "";
+
   const contextInfo = [
+    durationContext,
+    formatContext,
+    "",
     "## 戦術分析データ（参考）",
     tacticalAnalysis ? JSON.stringify({
       formation: tacticalAnalysis.formation,
@@ -300,11 +359,22 @@ async function generateSummaryWithGemini(
 
   // Phase 3: Use context caching for cost reduction
   const useCache = cache.cacheId && cache.version !== "fallback";
+
+  // Calculate dynamic maxOutputTokens based on video duration
+  const videoDurationSec = cache.videoDurationSec || 600;
+  const baseTokens = 12288;
+  const tokensPerMinute = 800;
+  const maxOutputTokens = Math.min(
+    32768,
+    baseTokens + Math.ceil((videoDurationSec / 60) * tokensPerMinute)
+  );
+
   const generationConfig = {
     // Phase 2.4: サマリー生成は創造的な表現のため高めのTemperatureを維持
     temperature: 0.4,
     topP: 0.95,
     topK: 40,
+    maxOutputTokens,
     responseMimeType: "application/json",
   };
 

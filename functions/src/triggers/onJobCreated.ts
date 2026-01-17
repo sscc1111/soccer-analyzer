@@ -10,7 +10,7 @@ export const onJobCreated = onDocumentCreated(
     const jobId = event.params.jobId;
     const job = event.data?.data();
 
-    console.log(`[onJobCreated] jobId=${jobId}, matchId=${job?.matchId}, type=${job?.type}`);
+    console.log(`[onJobCreated] jobId=${jobId}, matchId=${job?.matchId}, type=${job?.type}, videoId=${job?.videoId || "N/A"}`);
 
     if (!job) {
       console.error(`[onJobCreated] No job data for jobId=${jobId}`);
@@ -22,10 +22,22 @@ export const onJobCreated = onDocumentCreated(
 
     const matchId = job.matchId as string | undefined;
     const type = job.type as string | undefined;
+    const videoId = job.videoId as string | undefined;
+
     if (!matchId || !type) {
       console.error(`[onJobCreated] Missing matchId/type for jobId=${jobId}`);
       await event.data?.ref.set(
-        { status: "error", error: "missing matchId/type", updatedAt: now },
+        { status: "error", errorMessage: "missing matchId/type", updatedAt: now },
+        { merge: true }
+      );
+      return;
+    }
+
+    // For analyze_video jobs, videoId is required
+    if (type === "analyze_video" && !videoId) {
+      console.error(`[onJobCreated] Missing videoId for analyze_video job jobId=${jobId}`);
+      await event.data?.ref.set(
+        { status: "error", errorMessage: "missing videoId for analyze_video", updatedAt: now },
         { merge: true }
       );
       return;
@@ -37,7 +49,7 @@ export const onJobCreated = onDocumentCreated(
     if (!analyzerUrl) {
       console.error(`[onJobCreated] ANALYZER_URL not set`);
       await event.data?.ref.set(
-        { status: "error", error: "ANALYZER_URL not set", updatedAt: now },
+        { status: "error", errorMessage: "ANALYZER_URL not set", updatedAt: now },
         { merge: true }
       );
       await db
@@ -54,11 +66,11 @@ export const onJobCreated = onDocumentCreated(
       const token = process.env.ANALYZER_TOKEN;
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      console.log(`[onJobCreated] Calling analyzer: ${analyzerUrl}`);
+      console.log(`[onJobCreated] Calling analyzer: ${analyzerUrl}, videoId=${videoId || "N/A"}`);
       const res = await fetch(analyzerUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify({ matchId, jobId, type }),
+        body: JSON.stringify({ matchId, jobId, type, videoId }),
       });
 
       if (!res.ok) {
@@ -70,15 +82,30 @@ export const onJobCreated = onDocumentCreated(
       console.log(`[onJobCreated] Analyzer call successful for jobId=${jobId}`);
     } catch (err: any) {
       const message = err?.message ?? String(err);
+      const errorTime = new Date().toISOString();
       console.error(`[onJobCreated] Error:`, message);
       await event.data?.ref.set(
-        { status: "error", error: message, updatedAt: new Date().toISOString() },
+        { status: "error", errorMessage: message, updatedAt: errorTime },
         { merge: true }
       );
       await db
         .collection("matches")
         .doc(matchId)
-        .set({ analysis: { status: "error", lastRunAt: new Date().toISOString() } }, { merge: true });
+        .set({ analysis: { status: "error", errorMessage: message, lastRunAt: errorTime } }, { merge: true });
+
+      // P0修正: analyze_video ジョブの場合はビデオドキュメントのステータスも更新
+      if (type === "analyze_video" && videoId) {
+        await db
+          .collection("matches")
+          .doc(matchId)
+          .collection("videos")
+          .doc(videoId)
+          .set(
+            { analysis: { status: "error", errorMessage: message, lastRunAt: errorTime } },
+            { merge: true }
+          );
+        console.log(`[onJobCreated] Updated video ${videoId} status to error`);
+      }
     }
   }
 );

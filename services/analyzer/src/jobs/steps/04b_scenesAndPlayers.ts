@@ -28,6 +28,8 @@ import { defaultLogger as logger, ILogger } from "../../lib/logger";
 
 export interface ScenesAndPlayersOptions {
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   version: string;
   call1Result?: SegmentAndEventsResponse; // Optional - can be loaded from Firestore
   logger?: ILogger;
@@ -243,7 +245,7 @@ export async function stepScenesAndPlayers(
   }
 
   // Get cache info
-  const cache = await getValidCacheOrFallback(matchId, "scenes_and_players");
+  const cache = await getValidCacheOrFallback(matchId, options.videoId, "scenes_and_players");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found", { matchId });

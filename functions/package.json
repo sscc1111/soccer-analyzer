@@ -2,7 +2,7 @@
   "name": "@soccer/functions",
   "version": "0.0.1",
   "private": true,
-  "main": "dist/index.js",
+  "main": "dist/functions/src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

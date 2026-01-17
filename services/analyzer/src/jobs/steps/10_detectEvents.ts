@@ -38,6 +38,7 @@ import {
 
 type StepOptions = {
   matchId: string;
+  videoId?: string;
   version: string;
   logger?: ILogger;
 };
@@ -70,6 +71,7 @@ async function updateTrackingStatus(
  */
 export async function stepDetectEvents({
   matchId,
+  videoId,
   version,
   logger,
 }: StepOptions) {
@@ -183,7 +185,7 @@ export async function stepDetectEvents({
     await updateTrackingStatus(matchId, { progress: 70 });
 
     // Extract events that need user review
-    const pendingReviews = extractPendingReviews(detectedEvents);
+    const pendingReviews = extractPendingReviews(detectedEvents, matchId, videoId);
 
     stepLog?.info("Pending reviews extracted", {
       reviewCount: pendingReviews.length,

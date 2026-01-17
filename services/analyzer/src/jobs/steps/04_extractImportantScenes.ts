@@ -14,6 +14,13 @@ import { getValidCacheOrFallback, getCacheManager, type GeminiCacheDoc } from ".
 import { callGeminiApi, callGeminiApiWithCache, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
 import { defaultLogger as logger, ILogger } from "../../lib/logger";
 import { withRetry } from "../../lib/retry";
+import {
+  calculateClipImportance,
+  matchClipToEvents,
+  type Clip,
+  type Event as ClipEvent,
+  type EventType,
+} from "../../lib/clipEventMatcher";
 
 // Prompt version for cache invalidation
 const SCENE_EXTRACTION_VERSION = "v1";
@@ -38,6 +45,7 @@ type SceneResponse = z.infer<typeof ScenesResponseSchema>;
 
 export type ExtractImportantScenesOptions = {
   matchId: string;
+  videoId?: string;
   version: string;
   logger?: ILogger;
 };
@@ -74,11 +82,11 @@ async function loadPrompt() {
 export async function stepExtractImportantScenes(
   options: ExtractImportantScenesOptions
 ): Promise<ExtractImportantScenesResult> {
-  const { matchId, version } = options;
+  const { matchId, videoId, version } = options;
   const log = options.logger ?? logger;
   const stepLogger = log.child ? log.child({ step: "extract_important_scenes" }) : log;
 
-  stepLogger.info("Starting scene extraction", { matchId, version });
+  stepLogger.info("Starting scene extraction", { matchId, videoId, version });
 
   const db = getDb();
   const matchRef = db.collection("matches").doc(matchId);
@@ -101,7 +109,7 @@ export async function stepExtractImportantScenes(
 
   // Get cache info (with fallback to direct file URI)
   // Phase 3.1: Pass step name for cache hit/miss tracking
-  const cache = await getValidCacheOrFallback(matchId, "extract_important_scenes");
+  const cache = await getValidCacheOrFallback(matchId, options.videoId, "extract_important_scenes");
 
   if (!cache) {
     stepLogger.warn("No valid cache or file URI found, skipping scene extraction", { matchId });
@@ -135,14 +143,24 @@ export async function stepExtractImportantScenes(
     };
   }
 
+  // Phase 7.1.1: Calculate scene importance using clipEventMatcher
+  const scenesWithEnhancedImportance = await enhanceSceneImportance(
+    scenes,
+    matchId,
+    version,
+    matchRef,
+    stepLogger
+  );
+
   // Save scenes to Firestore
   const batch = db.batch();
   const scenesCollection = matchRef.collection("importantScenes");
 
-  for (const scene of scenes) {
+  for (const scene of scenesWithEnhancedImportance) {
     const sceneDoc: ImportantSceneDoc = {
       sceneId: matchId + "_" + scene.startSec.toFixed(1),
       matchId,
+      videoId,
       startSec: scene.startSec,
       endSec: scene.endSec,
       type: scene.type as SceneType,
@@ -165,15 +183,23 @@ export async function stepExtractImportantScenes(
     await getCacheManager().updateCacheUsage(matchId);
   }
 
+  // Log importance statistics
+  const importanceStats = calculateImportanceStats(scenesWithEnhancedImportance);
+
   stepLogger.info("Scene extraction complete", {
     matchId,
-    sceneCount: scenes.length,
-    topScenes: scenes.slice(0, 5).map((s) => ({ type: s.type, importance: s.importance })),
+    sceneCount: scenesWithEnhancedImportance.length,
+    topScenes: scenesWithEnhancedImportance.slice(0, 5).map((s) => ({
+      type: s.type,
+      importance: s.importance,
+      hasEventMatch: s.eventMatchCount ? s.eventMatchCount > 0 : false,
+    })),
+    importanceStats,
   });
 
   return {
     matchId,
-    sceneCount: scenes.length,
+    sceneCount: scenesWithEnhancedImportance.length,
     skipped: false,
   };
 }
@@ -223,16 +249,29 @@ async function extractScenesWithGemini(
   // Phase 3: Use context caching for cost reduction
   const useCache = cache.cacheId && cache.version !== "fallback";
 
+  // Calculate dynamic maxOutputTokens based on video duration
+  // Longer videos have more scenes, requiring more output tokens
+  // Use higher base and max to handle longer videos safely
+  const videoDurationSec = cache.videoDurationSec || 600; // Default 10 minutes (conservative)
+  const baseTokens = 12288;
+  const tokensPerMinute = 800;
+  const maxOutputTokens = Math.min(
+    32768, // Gemini 2.5 Flash supports up to 65K output tokens
+    baseTokens + Math.ceil((videoDurationSec / 60) * tokensPerMinute)
+  );
+
   log.info("calling Gemini for scene extraction", {
     cacheId: cache.cacheId,
     fileUri: cache.storageUri || cache.fileUri,
     model: modelId,
     useCache,
+    videoDurationSec,
+    maxOutputTokens,
   });
 
   const generationConfig = {
     temperature: 0.3,
-    maxOutputTokens: 8192,
+    maxOutputTokens,
     responseMimeType: "application/json",
   };
 
@@ -321,4 +360,183 @@ export async function getMatchScenes(matchId: string): Promise<ImportantSceneDoc
     .get();
 
   return scenesSnap.docs.map((doc) => doc.data() as ImportantSceneDoc);
+}
+
+/**
+ * Enhanced scene type with event matching metadata
+ */
+type EnhancedScene = SceneResponse["scenes"][number] & {
+  eventMatchCount?: number;
+  originalImportance?: number;
+};
+
+/**
+ * Enhance scene importance by matching with detected events
+ * Phase 7.1.1: Integrate calculateClipImportance
+ */
+async function enhanceSceneImportance(
+  scenes: SceneResponse["scenes"],
+  matchId: string,
+  version: string,
+  matchRef: FirebaseFirestore.DocumentReference,
+  log: ILogger
+): Promise<EnhancedScene[]> {
+  // Fetch all events for this match version
+  const [shotEventsSnap, setPieceEventsSnap, passEventsSnap, carryEventsSnap, turnoverEventsSnap] = await Promise.all([
+    matchRef.collection("shotEvents").where("version", "==", version).get(),
+    matchRef.collection("setPieceEvents").where("version", "==", version).get(),
+    matchRef.collection("passEvents").where("version", "==", version).get(),
+    matchRef.collection("carryEvents").where("version", "==", version).get(),
+    matchRef.collection("turnoverEvents").where("version", "==", version).get(),
+  ]);
+
+  // Convert to ClipEvent format
+  const allEvents: ClipEvent[] = [
+    ...shotEventsSnap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        timestamp: data.timestamp as number,
+        type: "shot" as EventType,
+        details: {
+          shotResult: data.shotResult as "goal" | "saved" | "blocked" | "missed" | "post",
+          isOnTarget: data.isOnTarget as boolean,
+          shotType: data.shotType as string,
+        },
+      };
+    }),
+    ...setPieceEventsSnap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        timestamp: data.timestamp as number,
+        type: "setPiece" as EventType,
+        details: {
+          setPieceType: data.setPieceType as string,
+        },
+      };
+    }),
+    ...passEventsSnap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        timestamp: data.timestamp as number,
+        type: "pass" as EventType,
+        details: {
+          outcome: data.outcome as "complete" | "incomplete" | "intercepted",
+        },
+      };
+    }),
+    ...carryEventsSnap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        timestamp: data.timestamp as number,
+        type: "carry" as EventType,
+      };
+    }),
+    ...turnoverEventsSnap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        timestamp: data.timestamp as number,
+        type: "turnover" as EventType,
+        details: {
+          turnoverType: data.turnoverType as string,
+        },
+      };
+    }),
+  ];
+
+  log.info("Fetched events for scene importance calculation", {
+    matchId,
+    eventCount: allEvents.length,
+    eventTypes: {
+      shot: shotEventsSnap.size,
+      setPiece: setPieceEventsSnap.size,
+      pass: passEventsSnap.size,
+      carry: carryEventsSnap.size,
+      turnover: turnoverEventsSnap.size,
+    },
+  });
+
+  // Calculate enhanced importance for each scene
+  const enhancedScenes: EnhancedScene[] = scenes.map((scene) => {
+    const clip: Clip = {
+      id: matchId + "_" + scene.startSec.toFixed(1),
+      startTime: scene.startSec,
+      endTime: scene.endSec,
+    };
+
+    // Match scene to events
+    const matches = matchClipToEvents(clip, allEvents, 2.0);
+
+    if (matches.length === 0) {
+      // No event matches, keep original importance
+      return {
+        ...scene,
+        eventMatchCount: 0,
+        originalImportance: scene.importance,
+      };
+    }
+
+    // Calculate enhanced importance
+    const importanceFactors = calculateClipImportance(clip, matches, {
+      matchMinute: scene.startSec / 60,
+      totalMatchMinutes: 90,
+    });
+
+    // Blend Gemini importance with event-based importance
+    // Give 60% weight to event-based, 40% to Gemini's original importance
+    const blendedImportance = importanceFactors.finalImportance * 0.6 + scene.importance * 0.4;
+
+    return {
+      ...scene,
+      importance: Math.min(1.0, blendedImportance),
+      eventMatchCount: matches.length,
+      originalImportance: scene.importance,
+    };
+  });
+
+  // Sort by enhanced importance (descending)
+  enhancedScenes.sort((a, b) => b.importance - a.importance);
+
+  return enhancedScenes;
+}
+
+/**
+ * Calculate importance statistics for logging
+ */
+function calculateImportanceStats(scenes: EnhancedScene[]): {
+  mean: number;
+  median: number;
+  min: number;
+  max: number;
+  withEventMatches: number;
+  withoutEventMatches: number;
+} {
+  if (scenes.length === 0) {
+    return { mean: 0, median: 0, min: 0, max: 0, withEventMatches: 0, withoutEventMatches: 0 };
+  }
+
+  const importances = scenes.map((s) => s.importance);
+  const sorted = [...importances].sort((a, b) => a - b);
+
+  const mean = importances.reduce((sum, val) => sum + val, 0) / importances.length;
+  const median = sorted.length % 2 === 0
+    ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+    : sorted[Math.floor(sorted.length / 2)];
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+  const withEventMatches = scenes.filter((s) => (s.eventMatchCount ?? 0) > 0).length;
+  const withoutEventMatches = scenes.length - withEventMatches;
+
+  return {
+    mean: Number(mean.toFixed(3)),
+    median: Number(median.toFixed(3)),
+    min: Number(min.toFixed(3)),
+    max: Number(max.toFixed(3)),
+    withEventMatches,
+    withoutEventMatches,
+  };
 }

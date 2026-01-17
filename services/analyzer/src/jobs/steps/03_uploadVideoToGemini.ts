@@ -22,8 +22,34 @@ import {
 } from "../../gemini/cacheManager";
 import { defaultLogger as logger } from "../../lib/logger";
 
+/**
+ * Get video info from videoId (subcollection) or fallback to legacy match.video
+ */
+async function getVideoInfo(
+  matchRef: FirebaseFirestore.DocumentReference,
+  videoId?: string
+): Promise<{ storagePath: string | null; durationSec?: number }> {
+  if (videoId) {
+    const videoDoc = await matchRef.collection("videos").doc(videoId).get();
+    if (videoDoc.exists) {
+      const data = videoDoc.data();
+      return {
+        storagePath: data?.storagePath ?? null,
+        durationSec: data?.durationSec,
+      };
+    }
+  }
+  const matchDoc = await matchRef.get();
+  const video = matchDoc.data()?.video;
+  return {
+    storagePath: video?.storagePath ?? null,
+    durationSec: video?.durationSec,
+  };
+}
+
 export type UploadVideoToGeminiOptions = {
   matchId: string;
+  videoId?: string;
   version: string;
 };
 
@@ -42,6 +68,7 @@ export type UploadVideoToGeminiResult = {
  */
 export async function stepUploadVideoToGemini({
   matchId,
+  videoId,
   version,
 }: UploadVideoToGeminiOptions): Promise<UploadVideoToGeminiResult> {
   const db = getDb();
@@ -66,10 +93,13 @@ export async function stepUploadVideoToGemini({
     };
   };
 
-  const storagePath = match?.video?.storagePath;
+  // Get video info from subcollection or legacy location
+  const videoInfo = await getVideoInfo(matchRef, videoId);
+  const storagePath = videoInfo.storagePath;
   if (!storagePath) {
     throw new Error("video.storagePath missing");
   }
+  const durationSec = videoInfo.durationSec;
 
   // 2. Check if context caching is enabled
   const cachingEnabled = isContextCachingEnabled();
@@ -131,7 +161,6 @@ export async function stepUploadVideoToGemini({
   // 6. Create or get context cache
   const cacheManager = getCacheManager();
   // Phase 3.1: Use dynamic TTL based on video duration
-  const durationSec = match?.video?.durationSec;
   const ttlSeconds = durationSec ? calculateDynamicTtl(durationSec) : getCacheTtlSeconds();
 
   let cacheDoc: GeminiCacheDoc;

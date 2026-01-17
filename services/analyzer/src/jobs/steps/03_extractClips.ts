@@ -4,6 +4,31 @@ import { extractClip, extractThumbnail, getAudioLevels, getMotionScores, makePro
 import { safeId } from "../../lib/ids";
 import { downloadToTmp, storageFileExists, uploadFromTmp } from "../../lib/storage";
 
+/**
+ * Get video info from videoId (subcollection) or fallback to legacy match.video
+ */
+async function getVideoInfo(
+  matchRef: FirebaseFirestore.DocumentReference,
+  videoId?: string
+): Promise<{ storagePath: string | null; durationSec?: number }> {
+  if (videoId) {
+    const videoDoc = await matchRef.collection("videos").doc(videoId).get();
+    if (videoDoc.exists) {
+      const data = videoDoc.data();
+      return {
+        storagePath: data?.storagePath ?? null,
+        durationSec: data?.durationSec,
+      };
+    }
+  }
+  const matchDoc = await matchRef.get();
+  const video = matchDoc.data()?.video;
+  return {
+    storagePath: video?.storagePath ?? null,
+    durationSec: video?.durationSec,
+  };
+}
+
 type ShotDoc = {
   shotId: string;
   t0: number;
@@ -18,15 +43,24 @@ const PEAK_WINDOW_BEFORE = 8;
 const PEAK_WINDOW_AFTER = 12;
 const MERGE_GAP_SEC = 1;
 
-export async function stepExtractClips({ matchId, version }: { matchId: string; version: string }) {
+export async function stepExtractClips({
+  matchId,
+  videoId,
+  version
+}: {
+  matchId: string;
+  videoId?: string;
+  version: string
+}) {
   const db = getDb();
   const matchRef = db.collection("matches").doc(matchId);
   const matchSnap = await matchRef.get();
   if (!matchSnap.exists) throw new Error(`match not found: ${matchId}`);
 
-  const match = matchSnap.data() as { video?: { storagePath?: string; durationSec?: number } } | undefined;
-  const storagePath = match?.video?.storagePath;
-  const durationSec = match?.video?.durationSec ?? 0;
+  // Get video info from subcollection or legacy location
+  const videoInfo = await getVideoInfo(matchRef, videoId);
+  const storagePath = videoInfo.storagePath;
+  const durationSec = videoInfo.durationSec ?? 0;
   if (!storagePath) throw new Error("video.storagePath missing");
   if (!durationSec) throw new Error("video.durationSec missing");
 
@@ -129,6 +163,7 @@ export async function stepExtractClips({ matchId, version }: { matchId: string; 
       {
         clipId,
         shotId,
+        videoId,
         t0: clip.t0,
         t1: clip.t1,
         reason: clip.reason,

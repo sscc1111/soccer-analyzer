@@ -186,6 +186,63 @@ export const GAME_FORMAT_INFO: Record<GameFormat, GameFormatInfo> = {
 /** Attack direction setting */
 export type AttackDirection = "LTR" | "RTL";
 
+/**
+ * Video type for split uploads
+ * - firstHalf: First half of the match
+ * - secondHalf: Second half of the match
+ * - single: Single video containing the entire match
+ */
+export type VideoType = "firstHalf" | "secondHalf" | "single";
+
+/**
+ * Video configuration mode
+ * - split: Separate videos for first and second half
+ * - single: Single video for the entire match
+ */
+export type VideoConfiguration = "split" | "single";
+
+/**
+ * Video document for subcollection storage
+ * Stored at: matches/{matchId}/videos/{videoId}
+ */
+export type VideoDoc = {
+  /** Unique video ID */
+  videoId: string;
+  /** Parent match ID */
+  matchId: string;
+  /** Video type (firstHalf, secondHalf, or single) */
+  type: VideoType;
+  /** Firebase Storage path */
+  storagePath: string;
+  /** Video duration in seconds */
+  durationSec?: number;
+  /** Video width in pixels */
+  width?: number;
+  /** Video height in pixels */
+  height?: number;
+  /** Video frames per second */
+  fps?: number;
+  /** When the video was uploaded */
+  uploadedAt: string;
+  /** Analysis status for this specific video */
+  analysis?: {
+    status: "idle" | "queued" | "running" | "done" | "error";
+    errorMessage?: string;
+    lastRunAt?: string;
+    /** Progress percentage (0-100) */
+    progress?: number;
+  };
+};
+
+/**
+ * Videos uploaded status for quick access
+ */
+export type VideosUploadedStatus = {
+  firstHalf?: boolean;
+  secondHalf?: boolean;
+  single?: boolean;
+};
+
 export type MatchSettings = {
   attackDirection?: AttackDirection | null;
   relabelOnChange?: boolean;
@@ -209,6 +266,8 @@ export type MatchSettings = {
   fieldSize?: FieldSize | null;
   /** Processing mode for analysis */
   processingMode?: ProcessingMode | null;
+  /** Video configuration (split halves or single video) */
+  videoConfiguration?: VideoConfiguration | null;
 };
 
 /**
@@ -300,6 +359,10 @@ export type MatchDoc = {
   createdAt?: string | null;
   /** When the match was last updated */
   updatedAt?: string | null;
+  /**
+   * @deprecated Use videos subcollection instead.
+   * Kept for backward compatibility with existing data.
+   */
   video?: {
     storagePath: string;
     durationSec?: number;
@@ -308,6 +371,10 @@ export type MatchDoc = {
     fps?: number;
     uploadedAt?: string;
   };
+  /** Number of videos in the videos subcollection (for UI display) */
+  videoCount?: number;
+  /** Quick access to which video types have been uploaded */
+  videosUploaded?: VideosUploadedStatus;
   settings?: MatchSettings;
   analysis?: {
     status: "idle" | "queued" | "running" | "partial" | "done" | "error";

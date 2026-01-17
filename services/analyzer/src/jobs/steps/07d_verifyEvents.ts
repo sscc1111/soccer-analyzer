@@ -29,6 +29,8 @@ import { FieldValue } from "firebase-admin/firestore";
 
 export type VerifyEventsOptions = {
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   version: string;
   /** Maximum number of events to verify per run (cost control) */
   maxVerifications?: number;
@@ -88,7 +90,7 @@ export async function stepVerifyEvents(
 
   // Check if cache is available - verification requires actual context cache, not fallback
   // Phase 3.1: Pass step name for cache hit/miss tracking
-  const cache = await getValidCacheOrFallback(matchId, "verify_events");
+  const cache = await getValidCacheOrFallback(matchId, options.videoId, "verify_events");
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot verify events", { matchId });
     return {

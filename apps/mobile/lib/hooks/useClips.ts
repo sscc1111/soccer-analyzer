@@ -21,10 +21,14 @@ export function useClips(matchId: string | null, filter?: ClipsFilter): UseClips
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    // P1修正: アンマウント後のstate更新を防ぐフラグ
+    let mounted = true;
+
     if (!matchId) {
       setClips([]);
       setLoading(false);
-      return;
+      setError(null);
+      return () => { mounted = false; };
     }
 
     const clipsRef = collection(db, "matches", matchId, "clips");
@@ -34,6 +38,8 @@ export function useClips(matchId: string | null, filter?: ClipsFilter): UseClips
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
+        if (!mounted) return;
+
         let docs = snapshot.docs.map((d) => ({
           clipId: d.id,
           ...d.data(),
@@ -60,13 +66,17 @@ export function useClips(matchId: string | null, filter?: ClipsFilter): UseClips
         setLoading(false);
       },
       (err) => {
+        if (!mounted) return;
         console.error("Error loading clips:", err);
         setError(err);
         setLoading(false);
       }
     );
 
-    return unsubscribe;
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, [matchId, filter?.label, filter?.minConfidence, filter?.version]);
 
   return { clips, loading, error };

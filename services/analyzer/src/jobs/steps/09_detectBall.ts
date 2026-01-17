@@ -30,6 +30,7 @@ import { KalmanFilter2D } from "../../detection/kalman";
 
 type StepOptions = {
   matchId: string;
+  videoId?: string;
   version: string;
   logger?: ILogger;
   ballDetector?: BallDetector;
@@ -63,6 +64,26 @@ async function updateTrackingStatus(
 }
 
 /**
+ * Get video information (storage path and duration) with videoId support
+ */
+async function getVideoInfo(
+  matchRef: FirebaseFirestore.DocumentReference,
+  videoId?: string
+): Promise<{ storagePath: string | null; durationSec?: number }> {
+  if (videoId) {
+    const videoDoc = await matchRef.collection("videos").doc(videoId).get();
+    if (videoDoc.exists) {
+      const data = videoDoc.data();
+      return { storagePath: data?.storagePath ?? null, durationSec: data?.durationSec };
+    }
+  }
+  // Fallback to legacy match.video field
+  const matchDoc = await matchRef.get();
+  const video = matchDoc.data()?.video;
+  return { storagePath: video?.storagePath ?? null, durationSec: video?.durationSec };
+}
+
+/**
  * Get confidence threshold based on camera zoom hint
  */
 function getConfidenceThreshold(zoomHint?: "near" | "mid" | "far"): number {
@@ -82,6 +103,7 @@ function getConfidenceThreshold(zoomHint?: "near" | "mid" | "far"): number {
  */
 export async function stepDetectBall({
   matchId,
+  videoId,
   version,
   logger,
   ballDetector = new PlaceholderBallDetector(),
@@ -106,8 +128,8 @@ export async function stepDetectBall({
     } | undefined;
 
     const cameraZoomHint = matchData?.settings?.camera?.zoomHint;
-    const storagePath = matchData?.video?.storagePath;
-    const durationSec = matchData?.video?.durationSec ?? 0;
+    const { storagePath, durationSec } = await getVideoInfo(matchRef, videoId);
+    const finalDurationSec = durationSec ?? 0;
 
     if (!storagePath) {
       throw new DetectionError("detection", "video.storagePath missing", {
@@ -140,7 +162,7 @@ export async function stepDetectBall({
     const localPath = await downloadToTmp(storagePath);
     const probe = await probeVideo(localPath);
     const { width, height } = probe;
-    const actualDuration = durationSec > 0 ? durationSec : probe.durationSec;
+    const actualDuration = finalDurationSec > 0 ? finalDurationSec : probe.durationSec;
 
     if (width === 0 || height === 0) {
       throw new DetectionError("detection", "Invalid video dimensions", {

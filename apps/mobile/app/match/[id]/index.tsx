@@ -13,7 +13,7 @@ import {
   TabsContent,
 } from "../../../components/ui";
 import { AnalysisProgress } from "../../../components/AnalysisProgress";
-import { useMatch, useStats, useEvents, usePendingReviews } from "../../../lib/hooks";
+import { useMatch, useStats, useEvents, usePendingReviews, useVideos } from "../../../lib/hooks";
 import type { EventLabel } from "@soccer/shared";
 
 const EVENT_LABELS: EventLabel[] = ["shot", "chance", "setPiece", "dribble", "defense", "other"];
@@ -24,6 +24,8 @@ function getStatusVariant(status?: string) {
       return "success";
     case "running":
     case "queued":
+    // P1修正: 分割アップロード対応の新ステータス
+    case "partial":           // 片方の動画のみ解析完了
       return "warning";
     case "error":
       return "destructive";
@@ -79,6 +81,7 @@ export default function MatchDashboardScreen() {
   const { matchStats, loading: statsLoading } = useStats(id);
   const { events } = useEvents(id);
   const { needsReviewCount } = usePendingReviews(id);
+  const { videos, loading: videosLoading } = useVideos(id);
 
   if (matchLoading) {
     return (
@@ -115,6 +118,16 @@ export default function MatchDashboardScreen() {
         )
       : 0;
 
+  // Video status
+  // P1修正: videosLoading中は「No Videos」を表示しない（ローディング完了を待つ）
+  const videoConfiguration = match.settings?.videoConfiguration ?? "single";
+  const videosUploaded = match.videosUploaded ?? {};
+  const hasAnyVideo = videosLoading || videos.length > 0 || match.video;
+  const hasAllVideos =
+    videoConfiguration === "single"
+      ? videosUploaded.single ?? false
+      : (videosUploaded.firstHalf ?? false) && (videosUploaded.secondHalf ?? false);
+
   return (
     <ScrollView className="flex-1 bg-background">
       <View className="p-4">
@@ -130,6 +143,87 @@ export default function MatchDashboardScreen() {
           </View>
           <Badge variant={getStatusVariant(status)}>{status}</Badge>
         </View>
+
+        {/* Video Status */}
+        {!hasAnyVideo && (
+          <Card className="mb-4 border-warning">
+            <CardContent className="py-3">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-1 mr-3">
+                  <Text className="text-foreground font-medium mb-1">
+                    No Videos Uploaded
+                  </Text>
+                  <Text className="text-muted-foreground text-sm">
+                    Upload videos to start analysis
+                  </Text>
+                </View>
+                <Button
+                  variant="outline"
+                  onPress={() => router.push(`/match/${id}/upload-video`)}
+                >
+                  Upload
+                </Button>
+              </View>
+            </CardContent>
+          </Card>
+        )}
+
+        {hasAnyVideo && !hasAllVideos && videoConfiguration === "split" && (
+          <Card className="mb-4 border-primary/50">
+            <CardContent className="py-3">
+              <Text className="text-foreground font-medium mb-2">Video Status</Text>
+              <View className="flex-row items-center gap-2 mb-2">
+                <Badge variant={videosUploaded.firstHalf ? "success" : "secondary"}>
+                  First Half: {videosUploaded.firstHalf ? "Uploaded" : "Missing"}
+                </Badge>
+                <Badge variant={videosUploaded.secondHalf ? "success" : "secondary"}>
+                  Second Half: {videosUploaded.secondHalf ? "Uploaded" : "Missing"}
+                </Badge>
+              </View>
+              {!hasAllVideos && (
+                <Button
+                  variant="outline"
+                  onPress={() => router.push(`/match/${id}/upload-video`)}
+                  className="mt-2"
+                >
+                  Upload Missing Videos
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {hasAnyVideo && hasAllVideos && videos.length > 0 && (
+          <Card className="mb-4">
+            <CardContent className="py-3">
+              <Text className="text-foreground font-medium mb-2">Videos</Text>
+              {videos.map((video) => (
+                <View key={video.videoId} className="flex-row items-center justify-between mb-1">
+                  <View className="flex-1">
+                    <Text className="text-foreground text-sm capitalize">
+                      {video.type === "firstHalf"
+                        ? "First Half"
+                        : video.type === "secondHalf"
+                        ? "Second Half"
+                        : "Full Match"}
+                    </Text>
+                    {video.durationSec && (
+                      <Text className="text-muted-foreground text-xs">
+                        {Math.floor(video.durationSec / 60)}:
+                        {String(video.durationSec % 60).padStart(2, "0")}
+                      </Text>
+                    )}
+                  </View>
+                  {video.analysis && (
+                    <Badge variant={getStatusVariant(video.analysis.status)}>
+                      {video.analysis.status}
+                    </Badge>
+                  )}
+                </View>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Analysis Progress */}
         <AnalysisProgress

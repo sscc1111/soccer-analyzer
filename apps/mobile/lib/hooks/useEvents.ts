@@ -15,10 +15,14 @@ export function useEvents(matchId: string | null): UseEventsResult {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    // P1修正: アンマウント後のstate更新を防ぐフラグ
+    let mounted = true;
+
     if (!matchId) {
       setEvents([]);
       setLoading(false);
-      return;
+      setError(null);
+      return () => { mounted = false; };
     }
 
     const eventsRef = collection(db, "matches", matchId, "events");
@@ -27,6 +31,7 @@ export function useEvents(matchId: string | null): UseEventsResult {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
+        if (!mounted) return;
         const docs = snapshot.docs.map((d) => ({
           eventId: d.id,
           ...d.data(),
@@ -35,12 +40,16 @@ export function useEvents(matchId: string | null): UseEventsResult {
         setLoading(false);
       },
       (err) => {
+        if (!mounted) return;
         setError(err);
         setLoading(false);
       }
     );
 
-    return unsubscribe;
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, [matchId]);
 
   return { events, loading, error };

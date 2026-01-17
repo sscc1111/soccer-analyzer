@@ -34,9 +34,17 @@ type EventDoc = {
   version?: string;
 };
 
-export async function stepComputeStats({ matchId, version }: { matchId: string; version: string }) {
+export async function stepComputeStats({
+  matchId,
+  videoId,
+  version,
+}: {
+  matchId: string;
+  videoId?: string;
+  version: string;
+}) {
   const stepLogger = logger.child ? logger.child({ step: "compute_stats" }) : logger;
-  stepLogger.info("Starting compute stats", { matchId, version });
+  stepLogger.info("Starting compute stats", { matchId, videoId, version });
 
   const db = getDb();
   const matchRef = db.collection("matches").doc(matchId);
@@ -46,21 +54,32 @@ export async function stepComputeStats({ matchId, version }: { matchId: string; 
   const matchData = matchSnap.data() as { settings?: MatchSettings } | undefined;
 
   // Fetch existing clip-based data
+  // P0修正: videoIdが指定されている場合、そのvideoIdのデータのみをフィルタリング
+  // 前半/後半の分割アップロード時にデータが混在するのを防ぐ
+  const buildQuery = (collectionName: string) => {
+    let query = matchRef.collection(collectionName).where("version", "==", version);
+    if (videoId) {
+      query = query.where("videoId", "==", videoId);
+    }
+    return query;
+  };
+
   const [shotsSnap, clipsSnap, eventsSnap] = await Promise.all([
-    matchRef.collection("shots").where("version", "==", version).get(),
-    matchRef.collection("clips").where("version", "==", version).get(),
-    matchRef.collection("events").where("version", "==", version).get(),
+    buildQuery("shots").get(),
+    buildQuery("clips").get(),
+    buildQuery("events").get(),
   ]);
 
   // Fetch auto-stats tracking data (Phase 3)
+  // P0修正: videoIdフィルタリングを適用
   const [passEventsSnap, carryEventsSnap, turnoverEventsSnap, shotEventsSnap, setPieceEventsSnap, possessionSnap, trackMappingsSnap] =
     await Promise.all([
-      matchRef.collection("passEvents").where("version", "==", version).get(),
-      matchRef.collection("carryEvents").where("version", "==", version).get(),
-      matchRef.collection("turnoverEvents").where("version", "==", version).get(),
-      matchRef.collection("shotEvents").where("version", "==", version).get(),
-      matchRef.collection("setPieceEvents").where("version", "==", version).get(),
-      matchRef.collection("possessionSegments").where("version", "==", version).get(),
+      buildQuery("passEvents").get(),
+      buildQuery("carryEvents").get(),
+      buildQuery("turnoverEvents").get(),
+      buildQuery("shotEvents").get(),
+      buildQuery("setPieceEvents").get(),
+      buildQuery("possessionSegments").get(),
       matchRef.collection("trackMappings").get(), // trackMappings are not versioned
     ]);
 
@@ -79,6 +98,7 @@ export async function stepComputeStats({ matchId, version }: { matchId: string; 
 
   stepLogger.info("Fetched data for stats computation", {
     matchId,
+    videoId,
     shotsCount: shots.length,
     clipsCount: clips.length,
     eventsCount: events.length,
@@ -121,12 +141,16 @@ export async function stepComputeStats({ matchId, version }: { matchId: string; 
   const now = new Date().toISOString();
 
   for (const output of outputs) {
-    const statId = output.statId ?? `stat_${safeVersion}_${output.calculatorId}_${output.playerId ?? "match"}`;
+    // P2.10修正: playerIdにコロン等が含まれる場合があるためsafeIdでサニタイズ
+    // 例: player:away:N/A → player_away_N_A
+    const safePlayerId = safeId(output.playerId ?? "match");
+    const statId = output.statId ?? `stat_${safeVersion}_${output.calculatorId}_${safePlayerId}`;
     batch.set(
       statsRef.doc(statId),
       {
         ...output,
         statId,
+        videoId,
         version,
         pipelineVersion: version,
         computedAt: now,

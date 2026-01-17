@@ -1,6 +1,8 @@
 export type ClipDoc = {
   clipId: string;
   shotId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   t0: number;
   t1: number;
   reason: "motionPeak" | "audioPeak" | "manual" | "other";
@@ -20,4 +22,6 @@ export type ClipDoc = {
     rawOriginalResponse?: string | null;
     createdAt: string;
   } | null;
+  /** Whether this clip was merged from first and second half */
+  mergedFromHalves?: boolean;
 };

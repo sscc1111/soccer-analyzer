@@ -120,6 +120,25 @@ export function AnalysisProgress({ progress, status, errorMessage }: Props) {
     );
   }
 
+  // P1修正: 片方の動画のみ分析完了時のステータス
+  if (status === "partial") {
+    return (
+      <Card className="mb-4 border-warning">
+        <CardContent>
+          <View className="flex-row items-center">
+            <View className="w-4 h-4 rounded-full bg-amber-500 mr-2" />
+            <View className="flex-1">
+              <Text className="text-foreground font-medium">一部分析完了</Text>
+              <Text className="text-sm text-muted-foreground">
+                残りの動画をアップロードすると全体の分析が開始されます
+              </Text>
+            </View>
+          </View>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (status === "done") {
     return (
       <Card className="mb-4 border-green-500">

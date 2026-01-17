@@ -178,6 +178,7 @@ type EventsResponse = z.infer<typeof EventsResponseSchema>;
 
 export type DetectEventsGeminiOptions = {
   matchId: string;
+  videoId?: string;
   version: string;
   logger?: ILogger;
 };
@@ -257,7 +258,7 @@ export async function stepDetectEventsGemini(
 
   // Get cache info (with fallback to direct file URI)
   // Phase 3.1: Pass step name for cache hit/miss tracking
-  const cache = await getValidCacheOrFallback(matchId, "detect_events_gemini");
+  const cache = await getValidCacheOrFallback(matchId, options.videoId, "detect_events_gemini");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot detect events", { matchId });
@@ -491,11 +492,22 @@ async function detectEventsWithGemini(
 
   // Phase 3: Use context caching for cost reduction
   const useCache = cache.cacheId && cache.version !== "fallback";
+
+  // Calculate dynamic maxOutputTokens based on video duration
+  const videoDurationSec = cache.videoDurationSec || 600;
+  const baseTokens = 12288;
+  const tokensPerMinute = 800;
+  const maxOutputTokens = Math.min(
+    32768,
+    baseTokens + Math.ceil((videoDurationSec / 60) * tokensPerMinute)
+  );
+
   const generationConfig = {
     // Phase 2.4: 0.35→0.25に調整（攻撃的シュート検出を維持しつつ安定性向上）
     temperature: 0.25,
     topP: 0.95,
     topK: 40,
+    maxOutputTokens,
     responseMimeType: "application/json",
     responseSchema: GEMINI_RESPONSE_SCHEMA,
   };

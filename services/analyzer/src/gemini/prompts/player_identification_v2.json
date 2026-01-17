@@ -1,0 +1,41 @@
+{
+  "version": "v2",
+  "task": "Identify players, teams, and roles from the soccer match video including jersey numbers, team colors, and player positions. Use fallback strategies when jersey numbers are not clearly visible.",
+  "instructions": "この試合動画から、選手情報を識別してください。\n\n## ★★★ 重要: 動画観察優先 ★★★\n\n以下の情報は**動画から直接観察**して判断してください：\n- **ピッチ上の選手数**: 5人制(各チーム5人)/7人制(各7人)/8人制(各8人)/11人制(各11人)を観察\n- **背番号**: 1-99の範囲で、試合形式により選手数が異なる\n- **選手の役割**: 実際のプレーポジションを観察\n\nプロンプトの例は**参考程度**とし、**実際の動画内容を優先**してください。\n\n---\n\n## 識別対象\n1. チーム分類\n   - home: ホームチーム（ユニフォームの色を記録）\n   - away: アウェイチーム\n\n2. 役割識別\n   - player: フィールドプレイヤー\n   - goalkeeper: ゴールキーパー（異なるユニフォーム色）\n   - referee: 審判（通常黒/黄色）\n\n3. 背番号OCR（優先度順）\n   a. 明瞭に読み取れる場合: 正確な背番号を記録\n   b. 部分的に読み取れる場合: 可能性のある数字を記録（confidence低め）\n   c. 全く読み取れない場合: null（代わりにチームカラー、体型、位置で識別）\n\n## フォールバック戦略（背番号が不明瞭な場合）\n選手を識別するために以下の情報を活用:\n1. **チームカラー**: ユニフォームの色（primary/secondary）\n2. **体型・身長**: 体格の特徴（tall/average/short）\n3. **プレーポジション**: フィールド上での位置パターン\n4. **髪型・肌の色**: 視覚的な特徴\n5. **番号の部分情報**: 一桁目だけ、または位置だけ判読可能な場合\n\n## チームカラーと背番号の組み合わせ検出\n- 各チームの primary/secondary カラーを hex コードで記録\n- ゴールキーパーのユニフォーム色も必ず記録\n- 背番号のフォント色（白/黒/その他）も記録\n- チームごとの背番号スタイル（大きさ、位置）を観察\n\n## 同一選手の複数検出の防止\n- 同じ背番号 + 同じチームカラーの組み合わせは1人の選手\n- 映像全体を通して同一選手を追跡\n- 複数のアングル/タイミングで同じ選手を検出した場合、最も信頼度の高い情報を採用\n- trackingIdを使って時間的連続性を確認（同じtrackingIdは同じ選手）\n\n## 信頼度スコアリング\n- confidence は 0.0〜1.0 の範囲\n- 背番号が明瞭: 0.8-1.0\n- 背番号が部分的: 0.4-0.7\n- 背番号が不明（代替手段使用）: 0.1-0.3\n\n## 注意事項\n- ユニフォームの色は hex カラーコード (#RRGGBB)\n- 同じ選手が複数回検出される場合は、最も信頼度の高いものを採用\n- 各チームの選手数は試合フォーマットによって異なる（後続のプロンプトで指定）",
+  "output_schema": {
+    "teams": {
+      "home": {
+        "primaryColor": "string (hex color)",
+        "secondaryColor": "string (hex color, optional)",
+        "goalkeeperColor": "string (hex color)",
+        "numberColor": "string (hex color, jersey number color)"
+      },
+      "away": {
+        "primaryColor": "string (hex color)",
+        "secondaryColor": "string (hex color, optional)",
+        "goalkeeperColor": "string (hex color)",
+        "numberColor": "string (hex color, jersey number color)"
+      }
+    },
+    "players": [
+      {
+        "team": "home | away",
+        "jerseyNumber": "number | null",
+        "role": "player | goalkeeper",
+        "confidence": "number (0.0-1.0)",
+        "fallbackIdentifiers": {
+          "bodyType": "tall | average | short | null",
+          "hairColor": "string (hex color) | null",
+          "dominantPosition": "defender | midfielder | forward | goalkeeper | null"
+        },
+        "trackingId": "string | null (if temporal tracking available)"
+      }
+    ],
+    "referees": [
+      {
+        "role": "main_referee | linesman | fourth_official",
+        "uniformColor": "string (hex color)"
+      }
+    ]
+  }
+}

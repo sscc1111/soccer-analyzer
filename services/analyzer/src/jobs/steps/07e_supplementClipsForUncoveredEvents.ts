@@ -9,6 +9,16 @@
 
 import { getDb } from "../../firebase/admin";
 import { defaultLogger as logger, type ILogger } from "../../lib/logger";
+import {
+  matchClipToEvents,
+  calculateClipImportance,
+  calculateDynamicWindow,
+  type Clip,
+  type EventDetails,
+  type Event as ClipEvent,
+  type EventType,
+  type MatchContext,
+} from "../../lib/clipEventMatcher";
 
 // ============================================================================
 // Types
@@ -21,6 +31,13 @@ interface EventDoc {
   team: "home" | "away";
   confidence: number;
   version: string;
+  details?: {
+    shotResult?: string;
+    shotType?: string;
+    isOnTarget?: boolean;
+    setPieceType?: string;
+    turnoverType?: string;
+  };
 }
 
 interface ClipDoc {
@@ -33,6 +50,8 @@ interface ClipDoc {
 
 export interface SupplementClipsOptions {
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   version: string;
   videoDuration?: number;
   logger?: ILogger;
@@ -54,9 +73,10 @@ export interface SupplementClipsResult {
 // ============================================================================
 
 const SUPPLEMENT_CONFIG = {
-  // イベント前後のクリップ時間幅（秒）
-  windowBefore: 5,
-  windowAfter: 3,
+  // デフォルトのイベント前後のクリップ時間幅（秒）
+  // 注: 動的ウィンドウ機能が有効な場合、これらはフォールバックとして使用
+  defaultWindowBefore: 5,
+  defaultWindowAfter: 3,
 
   // 既存クリップとの重複判定の許容範囲（秒）
   overlapTolerance: 5,
@@ -69,6 +89,9 @@ const SUPPLEMENT_CONFIG = {
 
   // 最大補完クリップ数（コスト管理）
   maxSupplementaryClips: 20,
+
+  // 動的ウィンドウ機能を有効にするか
+  useDynamicWindow: true,
 };
 
 // ============================================================================
@@ -78,11 +101,11 @@ const SUPPLEMENT_CONFIG = {
 export async function stepSupplementClipsForUncoveredEvents(
   options: SupplementClipsOptions
 ): Promise<SupplementClipsResult> {
-  const { matchId, version } = options;
+  const { matchId, videoId, version } = options;
   const log = options.logger ?? logger;
   const stepLogger = log.child ? log.child({ step: "supplement_clips" }) : log;
 
-  stepLogger.info("Starting clip supplementation for uncovered events", { matchId, version });
+  stepLogger.info("Starting clip supplementation for uncovered events", { matchId, videoId, version });
 
   const db = getDb();
   const matchRef = db.collection("matches").doc(matchId);
@@ -169,10 +192,16 @@ export async function stepSupplementClipsForUncoveredEvents(
     ),
   });
 
-  // 補完クリップ数を制限
-  const eventsToSupplement = uncoveredEvents
-    .sort((a, b) => b.confidence - a.confidence) // 高信頼度優先
-    .slice(0, SUPPLEMENT_CONFIG.maxSupplementaryClips);
+  // 補完クリップ数を制限（clipEventMatcherの重要度スコアで優先順位付け）
+  const eventsWithImportance = uncoveredEvents.map((event) => ({
+    event,
+    importance: calculateSupplementaryClipImportance(event),
+  }));
+
+  const eventsToSupplement = eventsWithImportance
+    .sort((a, b) => b.importance - a.importance) // 高重要度優先
+    .slice(0, SUPPLEMENT_CONFIG.maxSupplementaryClips)
+    .map((e) => e.event);
 
   if (eventsToSupplement.length === 0) {
     stepLogger.info("All high-priority events are already covered by clips", { matchId });
@@ -192,14 +221,65 @@ export async function stepSupplementClipsForUncoveredEvents(
   const matchData = matchSnap.data();
   const videoDuration = options.videoDuration ?? matchData?.meta?.duration ?? 7200; // デフォルト2時間
 
-  // 補完クリップのメタデータを作成
+  // 全イベントを取得（動的ウィンドウ計算のコンテキスト用）
+  const allClipEvents: ClipEvent[] = eventsToSupplement.map((e) => ({
+    id: e.eventId,
+    timestamp: e.timestamp,
+    type: e.type as EventType,
+    details: e.details as EventDetails | undefined,
+  }));
+
+  // 試合コンテキスト（オプション - 動的ウィンドウ計算で使用）
+  const matchContext: MatchContext | undefined = matchData?.meta?.duration
+    ? {
+        totalMatchMinutes: matchData.meta.duration / 60,
+      }
+    : undefined;
+
+  // 補完クリップのメタデータを作成（動的ウィンドウを使用）
   const supplementaryClips = eventsToSupplement.map((event, idx) => {
-    const t0 = Math.max(0, event.timestamp - SUPPLEMENT_CONFIG.windowBefore);
-    const t1 = Math.min(videoDuration, event.timestamp + SUPPLEMENT_CONFIG.windowAfter);
+    let windowBefore = SUPPLEMENT_CONFIG.defaultWindowBefore;
+    let windowAfter = SUPPLEMENT_CONFIG.defaultWindowAfter;
+    let windowReason = "デフォルトウィンドウ";
+
+    if (SUPPLEMENT_CONFIG.useDynamicWindow) {
+      // 動的ウィンドウを計算
+      const clipEvent: ClipEvent = {
+        id: event.eventId,
+        timestamp: event.timestamp,
+        type: event.type as EventType,
+        details: event.details as EventDetails | undefined,
+      };
+
+      const dynamicWindow = calculateDynamicWindow(clipEvent, allClipEvents, {
+        ...matchContext,
+        matchMinute: event.timestamp / 60, // タイムスタンプから分に変換
+      });
+
+      windowBefore = dynamicWindow.before;
+      windowAfter = dynamicWindow.after;
+      windowReason = dynamicWindow.reason;
+
+      stepLogger.debug("Dynamic window calculated", {
+        eventId: event.eventId,
+        eventType: event.type,
+        timestamp: event.timestamp,
+        windowBefore,
+        windowAfter,
+        reason: windowReason,
+        contextBefore: dynamicWindow.contextBefore?.length ?? 0,
+        contextAfter: dynamicWindow.contextAfter?.length ?? 0,
+      });
+    }
+
+    const t0 = Math.max(0, event.timestamp - windowBefore);
+    const t1 = Math.min(videoDuration, event.timestamp + windowAfter);
     const safeVersion = version.replace(/[^a-zA-Z0-9_-]/g, "_");
 
     return {
       clipId: `clip_supp_${safeVersion}_${idx + 1}`,
+      matchId,
+      videoId,
       t0,
       t1,
       reason: "event_supplement" as const,
@@ -210,6 +290,13 @@ export async function stepSupplementClipsForUncoveredEvents(
         timestamp: event.timestamp,
         confidence: event.confidence,
         team: event.team,
+      },
+      // 動的ウィンドウ情報を記録
+      windowConfig: {
+        before: windowBefore,
+        after: windowAfter,
+        reason: windowReason,
+        isDynamic: SUPPLEMENT_CONFIG.useDynamicWindow,
       },
       // media は後で実際のクリップ抽出時に設定
       createdAt: new Date().toISOString(),
@@ -246,18 +333,67 @@ export async function stepSupplementClipsForUncoveredEvents(
 
 /**
  * 既存クリップに含まれない（カバーされていない）イベントを特定
+ * clipEventMatcherを使用して、より精度の高いマッチングを実現
  */
 function findUncoveredEvents(
   events: EventDoc[],
   clips: ClipDoc[],
   tolerance: number
 ): EventDoc[] {
+  // ClipDocをclipEventMatcher用のClip形式に変換
+  const matcherClips: Clip[] = clips.map((c) => ({
+    id: c.clipId,
+    startTime: c.t0,
+    endTime: c.t1,
+  }));
+
   return events.filter((event) => {
-    // イベントが既存クリップのいずれかにカバーされているかチェック
-    const isCovered = clips.some((clip) => {
-      // クリップの時間範囲 ± tolerance 内にイベントが含まれるか
-      return event.timestamp >= clip.t0 - tolerance && event.timestamp <= clip.t1 + tolerance;
-    });
-    return !isCovered;
+    // clipEventMatcherを使用してイベントがクリップにマッチするかチェック
+    const clipEvent: ClipEvent = {
+      id: event.eventId,
+      timestamp: event.timestamp,
+      type: event.type as EventType,
+    };
+
+    // 全クリップに対してマッチングを試行
+    for (const clip of matcherClips) {
+      const matches = matchClipToEvents(clip, [clipEvent], tolerance);
+      if (matches.length > 0) {
+        // イベントがカバーされている
+        return false;
+      }
+    }
+    // どのクリップにもマッチしない = 未カバー
+    return true;
   });
+}
+
+/**
+ * 補完クリップの重要度を計算
+ */
+function calculateSupplementaryClipImportance(
+  event: EventDoc,
+  matchMinute?: number
+): number {
+  const clipEvent: ClipEvent = {
+    id: event.eventId,
+    timestamp: event.timestamp,
+    type: event.type as EventType,
+  };
+
+  const mockClip: Clip = {
+    id: "temp",
+    startTime: event.timestamp - 5,
+    endTime: event.timestamp + 3,
+  };
+
+  const matches = matchClipToEvents(mockClip, [clipEvent], 2);
+  if (matches.length === 0) return event.confidence;
+
+  const importance = calculateClipImportance(mockClip, matches, {
+    matchMinute,
+    totalMatchMinutes: 90,
+  });
+
+  return importance.finalImportance;
 }

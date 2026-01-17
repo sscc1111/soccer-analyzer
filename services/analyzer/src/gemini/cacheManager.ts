@@ -55,6 +55,7 @@ export interface CacheHitStats {
 
 export type CreateCacheOptions = {
   matchId: string;
+  videoId?: string;
   fileUri: string;
   mimeType: string;
   displayName?: string;
@@ -435,27 +436,29 @@ export class GeminiCacheManager {
    * If a valid cache exists for this match, it will be returned.
    * Otherwise, a new cache will be created.
    */
-  async getOrCreateCache(options: CreateCacheOptions): Promise<GeminiCacheDoc> {
-    const { matchId, fileUri, mimeType, displayName, ttlSeconds, systemInstruction, videoDurationSec } =
+  async getOrCreateCache(options: CreateCacheOptions & { videoId?: string }): Promise<GeminiCacheDoc> {
+    const { matchId, videoId, fileUri, mimeType, displayName, ttlSeconds, systemInstruction, videoDurationSec } =
       options;
 
     // Check for existing valid cache
-    const existingCache = await this.getValidCache(matchId);
+    const existingCache = await this.getValidCache(matchId, videoId);
     if (existingCache) {
       logger.info("Using existing Gemini cache", {
         matchId,
+        videoId,
         cacheId: existingCache.cacheId,
         expiresAt: existingCache.expiresAt,
       });
 
       // Update usage tracking
-      await this.updateCacheUsage(matchId);
+      await this.updateCacheUsage(matchId, videoId);
       return existingCache;
     }
 
     // Create new cache
     const newCache = await this.createCache({
       matchId,
+      videoId,
       fileUri,
       mimeType,
       displayName,
@@ -481,6 +484,7 @@ export class GeminiCacheManager {
   async createCache(options: CreateCacheOptions): Promise<GeminiCacheDoc> {
     const {
       matchId,
+      videoId,
       fileUri,
       mimeType,
       ttlSeconds = this.config.defaultTtlSeconds,
@@ -488,11 +492,12 @@ export class GeminiCacheManager {
       videoDurationSec,
     } = options;
 
-    const displayName = options.displayName || `match_${matchId}_video`;
+    const displayName = options.displayName || `match_${matchId}_video${videoId ? `_${videoId}` : ''}`;
     const now = new Date();
 
     logger.info("Creating Vertex AI context cache via API", {
       matchId,
+      videoId,
       fileUri,
       mimeType,
       ttlSeconds,
@@ -515,6 +520,7 @@ export class GeminiCacheManager {
 
     const cacheDoc: GeminiCacheDoc = {
       matchId,
+      videoId,
       cacheId, // This is now the actual resource name from Vertex AI
       storageUri: fileUri,
       fileUri,
@@ -527,16 +533,18 @@ export class GeminiCacheManager {
       usageCount: 0,
     };
 
-    // Store cache metadata in Firestore
+    // Store cache metadata in Firestore at videoId-specific path
+    const cacheDocId = videoId || "legacy";
     await this.db
       .collection("matches")
       .doc(matchId)
       .collection("geminiCache")
-      .doc("current")
+      .doc(cacheDocId)
       .set(cacheDoc);
 
     logger.info("Created Vertex AI context cache successfully", {
       matchId,
+      videoId,
       cacheId,
       fileUri,
       ttlSeconds,
@@ -549,12 +557,13 @@ export class GeminiCacheManager {
   /**
    * Get a valid (non-expired) cache for a match
    */
-  async getValidCache(matchId: string): Promise<GeminiCacheDoc | null> {
+  async getValidCache(matchId: string, videoId?: string): Promise<GeminiCacheDoc | null> {
+    const cacheDocId = videoId || "legacy";
     const cacheRef = this.db
       .collection("matches")
       .doc(matchId)
       .collection("geminiCache")
-      .doc("current");
+      .doc(cacheDocId);
 
     const doc = await cacheRef.get();
     if (!doc.exists) return null;
@@ -568,6 +577,7 @@ export class GeminiCacheManager {
     if (expiresAt.getTime() - now.getTime() < thresholdMs) {
       logger.info("Gemini cache expired or expiring soon", {
         matchId,
+        videoId,
         expiresAt: cache.expiresAt,
       });
       return null;
@@ -579,12 +589,13 @@ export class GeminiCacheManager {
   /**
    * Update cache usage tracking
    */
-  async updateCacheUsage(matchId: string): Promise<void> {
+  async updateCacheUsage(matchId: string, videoId?: string): Promise<void> {
+    const cacheDocId = videoId || "legacy";
     const cacheRef = this.db
       .collection("matches")
       .doc(matchId)
       .collection("geminiCache")
-      .doc("current");
+      .doc(cacheDocId);
 
     await cacheRef.update({
       usageCount: FieldValue.increment(1),
@@ -595,12 +606,13 @@ export class GeminiCacheManager {
   /**
    * Delete cache for a match (both from Vertex AI and Firestore)
    */
-  async deleteCache(matchId: string): Promise<void> {
+  async deleteCache(matchId: string, videoId?: string): Promise<void> {
+    const cacheDocId = videoId || "legacy";
     const cacheRef = this.db
       .collection("matches")
       .doc(matchId)
       .collection("geminiCache")
-      .doc("current");
+      .doc(cacheDocId);
 
     // Get cache document to retrieve resource name
     const cacheDoc = await cacheRef.get();
@@ -614,12 +626,14 @@ export class GeminiCacheManager {
           await deleteActualCache(cache.cacheId);
           logger.info("Deleted Vertex AI context cache", {
             matchId,
+            videoId,
             cacheId: cache.cacheId,
           });
         } catch (error) {
           // Log error but continue to delete from Firestore
           logger.warn("Failed to delete Vertex AI context cache", {
             matchId,
+            videoId,
             cacheId: cache.cacheId,
             error: error instanceof Error ? error.message : String(error),
           });
@@ -630,7 +644,7 @@ export class GeminiCacheManager {
     // Delete from Firestore
     await cacheRef.delete();
 
-    logger.info("Deleted Gemini cache metadata", { matchId });
+    logger.info("Deleted Gemini cache metadata", { matchId, videoId });
   }
 
   /**
@@ -639,9 +653,10 @@ export class GeminiCacheManager {
    */
   async extendCacheTtl(
     matchId: string,
-    additionalSeconds: number
+    additionalSeconds: number,
+    videoId?: string
   ): Promise<GeminiCacheDoc | null> {
-    const cache = await this.getValidCache(matchId);
+    const cache = await this.getValidCache(matchId, videoId);
     if (!cache) return null;
 
     const newTtlSeconds = cache.ttlSeconds + additionalSeconds;
@@ -649,6 +664,8 @@ export class GeminiCacheManager {
     // Max TTL is 7 days (604800 seconds)
     const maxTtlSeconds = 7 * 24 * 60 * 60;
     const finalTtlSeconds = Math.min(newTtlSeconds, maxTtlSeconds);
+
+    const cacheDocId = videoId || "legacy";
 
     // Update cache TTL via Vertex AI API if cacheId is a resource name
     if (cache.cacheId && cache.cacheId.startsWith("projects/")) {
@@ -666,11 +683,12 @@ export class GeminiCacheManager {
           .collection("matches")
           .doc(matchId)
           .collection("geminiCache")
-          .doc("current")
+          .doc(cacheDocId)
           .set(updatedCacheDoc);
 
         logger.info("Extended Vertex AI cache TTL", {
           matchId,
+          videoId,
           cacheId: cache.cacheId,
           newTtlSeconds: finalTtlSeconds,
           newExpiresAt: updatedCacheDoc.expiresAt,
@@ -678,7 +696,7 @@ export class GeminiCacheManager {
 
         return updatedCacheDoc;
       } catch (error) {
-        logger.error("Failed to extend Vertex AI cache TTL", error, { matchId });
+        logger.error("Failed to extend Vertex AI cache TTL", error, { matchId, videoId });
         return null;
       }
     }
@@ -699,11 +717,12 @@ export class GeminiCacheManager {
       .collection("matches")
       .doc(matchId)
       .collection("geminiCache")
-      .doc("current")
+      .doc(cacheDocId)
       .set(updatedCache);
 
     logger.info("Extended cache TTL (metadata only)", {
       matchId,
+      videoId,
       newExpiresAt: finalExpiry.toISOString(),
     });
 
@@ -730,8 +749,8 @@ export class GeminiCacheManager {
    * Get cache details from Vertex AI API
    * Useful for verifying cache status and debugging
    */
-  async getCacheDetails(matchId: string): Promise<VertexAICachedContent | null> {
-    const cache = await this.getValidCache(matchId);
+  async getCacheDetails(matchId: string, videoId?: string): Promise<VertexAICachedContent | null> {
+    const cache = await this.getValidCache(matchId, videoId);
     if (!cache || !cache.cacheId || !cache.cacheId.startsWith("projects/")) {
       return null;
     }
@@ -741,6 +760,7 @@ export class GeminiCacheManager {
     } catch (error) {
       logger.warn("Failed to get cache details from API", {
         matchId,
+        videoId,
         cacheId: cache.cacheId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -793,20 +813,23 @@ export class GeminiCacheManager {
       const matchesSnapshot = await this.db.collection("matches").get();
 
       for (const matchDoc of matchesSnapshot.docs) {
-        const cacheRef = matchDoc.ref.collection("geminiCache").doc("current");
-        const cacheDoc = await cacheRef.get();
+        // Query all cache documents (including videoId-specific ones)
+        const cacheCollectionSnap = await matchDoc.ref.collection("geminiCache").get();
 
-        if (cacheDoc.exists) {
-          const cache = cacheDoc.data() as GeminiCacheDoc;
-          const expiresAt = new Date(cache.expiresAt);
+        for (const cacheDoc of cacheCollectionSnap.docs) {
+          if (cacheDoc.exists) {
+            const cache = cacheDoc.data() as GeminiCacheDoc;
+            const expiresAt = new Date(cache.expiresAt);
 
-          if (expiresAt < now) {
-            await cacheRef.delete();
-            deletedCount++;
-            logger.debug("Deleted expired cache", {
-              matchId: cache.matchId,
-              expiredAt: cache.expiresAt,
-            });
+            if (expiresAt < now) {
+              await cacheDoc.ref.delete();
+              deletedCount++;
+              logger.debug("Deleted expired cache", {
+                matchId: cache.matchId,
+                videoId: cache.videoId,
+                expiredAt: cache.expiresAt,
+              });
+            }
           }
         }
       }
@@ -994,15 +1017,17 @@ export async function getCacheHitStats(matchId: string): Promise<CacheHitStats> 
  * This ensures Gemini steps can work even without active context caching
  *
  * Phase 3.1: Enhanced with cache hit/miss tracking
+ * Phase 5.2.2: Enhanced with videoId support for split video analysis
  */
 export async function getValidCacheOrFallback(
   matchId: string,
+  videoId?: string,
   stepName?: string
 ): Promise<GeminiCacheDoc | null> {
   const cacheManager = getCacheManager();
 
   // First try to get valid cache
-  const cache = await cacheManager.getValidCache(matchId);
+  const cache = await cacheManager.getValidCache(matchId, videoId);
   if (cache) {
     // Phase 3.1: Record cache hit (non-blocking to avoid latency)
     if (stepName) {
@@ -1018,11 +1043,11 @@ export async function getValidCacheOrFallback(
     return cache;
   }
 
-  // Fallback: try to get file URI from match document's geminiUpload field
+  // Fallback: try to get file URI from match document
   const db = getDb();
   const matchSnap = await db.collection("matches").doc(matchId).get();
   if (!matchSnap.exists) {
-    logger.warn("Match not found for cache fallback", { matchId });
+    logger.warn("Match not found for cache fallback", { matchId, videoId });
     if (stepName) {
       void recordCacheAccess(matchId, stepName, "miss_not_found", {
         fallbackReason: "match_not_found",
@@ -1032,21 +1057,58 @@ export async function getValidCacheOrFallback(
   }
 
   const match = matchSnap.data();
-  const geminiUpload = match?.geminiUpload as {
-    fileUri?: string;
-    cacheId?: string;
-    modelId?: string;
-  } | undefined;
+  let fileUri: string | null = null;
+  let videoDurationSec: number | undefined;
 
-  // Also check video.storagePath as last resort
-  const storagePath = match?.video?.storagePath as string | undefined;
-  const bucket = process.env.STORAGE_BUCKET;
+  // If videoId is provided, try to get file URI from videos subcollection
+  if (videoId) {
+    try {
+      const videoSnap = await db
+        .collection("matches")
+        .doc(matchId)
+        .collection("videos")
+        .doc(videoId)
+        .get();
 
-  const fileUri = geminiUpload?.fileUri ||
-    (storagePath && bucket ? `gs://${bucket}/${storagePath}` : null);
+      if (videoSnap.exists) {
+        const videoData = videoSnap.data();
+        const storagePath = videoData?.storagePath as string | undefined;
+        const bucket = process.env.STORAGE_BUCKET;
+
+        if (storagePath && bucket) {
+          fileUri = `gs://${bucket}/${storagePath}`;
+          logger.info("Using video-specific file URI for fallback", { matchId, videoId, fileUri });
+        }
+        // Try to get video duration from video document
+        videoDurationSec = videoData?.durationSec as number | undefined;
+      }
+    } catch (error) {
+      logger.warn("Failed to get video document for fallback", {
+        matchId,
+        videoId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // If videoId not provided or video not found, try legacy paths
+  if (!fileUri) {
+    const geminiUpload = match?.geminiUpload as {
+      fileUri?: string;
+      cacheId?: string;
+      modelId?: string;
+    } | undefined;
+
+    // Also check video.storagePath as last resort
+    const storagePath = match?.video?.storagePath as string | undefined;
+    const bucket = process.env.STORAGE_BUCKET;
+
+    fileUri = geminiUpload?.fileUri ||
+      (storagePath && bucket ? `gs://${bucket}/${storagePath}` : null);
+  }
 
   if (!fileUri) {
-    logger.warn("No file URI available for fallback", { matchId });
+    logger.warn("No file URI available for fallback", { matchId, videoId });
     if (stepName) {
       void recordCacheAccess(matchId, stepName, "miss_not_found", {
         fallbackReason: "no_file_uri",
@@ -1062,18 +1124,25 @@ export async function getValidCacheOrFallback(
     });
   }
 
-  logger.info("Using fallback file URI (no context caching)", { matchId, fileUri });
+  logger.info("Using fallback file URI (no context caching)", { matchId, videoId, fileUri });
+
+  // Try to get video duration from match document if not found in video doc
+  if (!videoDurationSec) {
+    videoDurationSec = match?.video?.durationSec as number | undefined;
+  }
 
   // Return a minimal cache doc with just the file URI
   return {
     matchId,
-    cacheId: geminiUpload?.cacheId || `fallback_${matchId}`,
+    videoId,
+    cacheId: `fallback_${matchId}${videoId ? `_${videoId}` : ''}`,
     fileUri,
     storageUri: fileUri,
-    model: geminiUpload?.modelId || process.env.GEMINI_MODEL || "gemini-3-flash-preview",
+    model: process.env.GEMINI_MODEL || "gemini-3-flash-preview",
     ttlSeconds: 0, // Indicates no actual cache
     expiresAt: new Date(0).toISOString(), // Already expired
     createdAt: new Date().toISOString(),
     version: "fallback",
+    videoDurationSec, // Include video duration for dynamic token calculation
   };
 }

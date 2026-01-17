@@ -13,6 +13,10 @@ type ClipDoc = {
 
 type EventDoc = {
   eventId: string;
+  /** Match ID this event belongs to */
+  matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   clipId: string;
   label: string;
   confidence: number;
@@ -33,7 +37,15 @@ const labelMap: Record<string, string> = {
   other: "other",
 };
 
-export async function stepBuildEvents({ matchId, version }: { matchId: string; version: string }) {
+export async function stepBuildEvents({
+  matchId,
+  videoId,
+  version,
+}: {
+  matchId: string;
+  videoId?: string;
+  version: string;
+}) {
   const db = getDb();
   const matchRef = db.collection("matches").doc(matchId);
   const clipsSnap = await matchRef.collection("clips").where("version", "==", version).get();
@@ -61,6 +73,8 @@ export async function stepBuildEvents({ matchId, version }: { matchId: string; v
 
     const eventDoc: EventDoc = {
       eventId,
+      matchId,
+      videoId,
       clipId: clip.clipId,
       label,
       confidence: clip.gemini.confidence ?? 0.5,

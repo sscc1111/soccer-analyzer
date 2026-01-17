@@ -11,6 +11,8 @@
  */
 export type GeminiCacheDoc = {
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   /** Gemini Cache Manager ID (e.g., "cachedContents/xxx") */
   cacheId: string;
   /** Cloud Storage URI of the uploaded video (gs://...) */

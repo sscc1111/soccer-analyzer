@@ -33,6 +33,7 @@ import {
 
 type StepOptions = {
   matchId: string;
+  videoId?: string;
   version: string;
   logger?: ILogger;
   /** Number of frame samples per track for color extraction (default: 1 for performance) */
@@ -67,10 +68,31 @@ async function updateTrackingStatus(
 }
 
 /**
+ * Get video information (storage path and duration) with videoId support
+ */
+async function getVideoInfo(
+  matchRef: FirebaseFirestore.DocumentReference,
+  videoId?: string
+): Promise<{ storagePath: string | null; durationSec?: number }> {
+  if (videoId) {
+    const videoDoc = await matchRef.collection("videos").doc(videoId).get();
+    if (videoDoc.exists) {
+      const data = videoDoc.data();
+      return { storagePath: data?.storagePath ?? null, durationSec: data?.durationSec };
+    }
+  }
+  // Fallback to legacy match.video field
+  const matchDoc = await matchRef.get();
+  const video = matchDoc.data()?.video;
+  return { storagePath: video?.storagePath ?? null, durationSec: video?.durationSec };
+}
+
+/**
  * Classify teams based on uniform colors using K-means clustering
  */
 export async function stepClassifyTeams({
   matchId,
+  videoId,
   version,
   logger,
   samplesPerTrack = 1,  // Reduced from 5 for faster processing (1 frame per track is sufficient)
@@ -95,7 +117,7 @@ export async function stepClassifyTeams({
     } | undefined;
 
     const teamColors = matchData?.settings?.teamColors;
-    const storagePath = matchData?.video?.storagePath;
+    const { storagePath } = await getVideoInfo(matchRef, videoId);
 
     if (!storagePath) {
       throw new DetectionError("classification", "video.storagePath missing", {

@@ -36,7 +36,15 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function stepLabelClipsGemini({ matchId, version }: { matchId: string; version: string }) {
+export async function stepLabelClipsGemini({
+  matchId,
+  videoId,
+  version
+}: {
+  matchId: string;
+  videoId?: string;
+  version: string
+}) {
   if (!process.env.GCP_PROJECT_ID) {
     throw new Error("GCP_PROJECT_ID not set");
   }
@@ -55,7 +63,7 @@ export async function stepLabelClipsGemini({ matchId, version }: { matchId: stri
   // Phase 3.4: Use batch labeling if enabled
   if (USE_BATCH_LABELING) {
     const batchSize = getLabelBatchSize();
-    logger.info("Using batch labeling", { matchId, batchSize, targetCount: targets.length });
+    logger.info("Using batch labeling", { matchId, videoId, batchSize, targetCount: targets.length });
 
     // Limit to MAX_CLIPS_PER_RUN
     const clipsToProcess = targets.slice(0, MAX_CLIPS_PER_RUN);

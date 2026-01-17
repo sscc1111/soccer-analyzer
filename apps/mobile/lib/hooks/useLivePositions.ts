@@ -64,9 +64,13 @@ export function useLivePositions(
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    // P1修正: アンマウント後のstate更新を防ぐフラグ
+    let mounted = true;
+
     if (!matchId) {
       setLoading(false);
-      return;
+      setError(null);
+      return () => { mounted = false; };
     }
 
     setLoading(true);
@@ -84,6 +88,7 @@ export function useLivePositions(
     const unsubscribePlayers = onSnapshot(
       positionsQuery,
       (snapshot) => {
+        if (!mounted) return;
         const players: LivePosition[] = [];
 
         snapshot.forEach((doc) => {
@@ -107,6 +112,7 @@ export function useLivePositions(
         setLoading(false);
       },
       (err) => {
+        if (!mounted) return;
         console.error("Error fetching live positions:", err);
         setError(err as Error);
         setLoading(false);
@@ -120,6 +126,7 @@ export function useLivePositions(
     const unsubscribeBall = onSnapshot(
       ballRef,
       (snapshot) => {
+        if (!mounted) return;
         if (snapshot.exists()) {
           const data = snapshot.data();
           setData((prev) => ({
@@ -136,12 +143,14 @@ export function useLivePositions(
         }
       },
       (err) => {
+        if (!mounted) return;
         console.error("Error fetching ball position:", err);
         // Don't set error for ball - it's optional
       }
     );
 
     return () => {
+      mounted = false;
       unsubscribePlayers();
       unsubscribeBall();
     };

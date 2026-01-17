@@ -1,4 +1,4 @@
-import { PIPELINE_VERSION, type AnalysisStep, type AnalysisProgress } from "@soccer/shared";
+import { PIPELINE_VERSION, type AnalysisStep, type AnalysisProgress, type JobType } from "@soccer/shared";
 import { FieldValue } from "firebase-admin/firestore";
 import { getDb } from "../firebase/admin";
 import { createPipelineLogger } from "../lib/logger";
@@ -118,8 +118,6 @@ function createDetectors() {
     tracker: new PlaceholderTracker(),
   };
 }
-
-type JobType = "analyze_match" | "recompute_stats" | "relabel_and_stats";
 
 type PipelineOptions = {
   matchId: string;

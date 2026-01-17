@@ -31,6 +31,7 @@ import {
 
 type StepOptions = {
   matchId: string;
+  videoId?: string;
   version: string;
   logger?: ILogger;
   playerDetector?: PlayerDetector;
@@ -40,6 +41,32 @@ type StepOptions = {
   /** Progress callback (0-100) */
   onProgress?: (progress: number) => void;
 };
+
+/**
+ * Get video storage path and duration, supporting both videoId and legacy match.video
+ */
+async function getVideoInfo(
+  matchRef: FirebaseFirestore.DocumentReference,
+  videoId?: string
+): Promise<{ storagePath: string | null; durationSec?: number }> {
+  if (videoId) {
+    const videoDoc = await matchRef.collection("videos").doc(videoId).get();
+    if (videoDoc.exists) {
+      const data = videoDoc.data();
+      return {
+        storagePath: data?.storagePath ?? null,
+        durationSec: data?.durationSec,
+      };
+    }
+  }
+  // Fallback to legacy match.video field
+  const matchDoc = await matchRef.get();
+  const video = matchDoc.data()?.video;
+  return {
+    storagePath: video?.storagePath ?? null,
+    durationSec: video?.durationSec,
+  };
+}
 
 /**
  * Update tracking processing status in Firestore
@@ -69,6 +96,7 @@ async function updateTrackingStatus(
  */
 export async function stepDetectPlayers({
   matchId,
+  videoId,
   version,
   logger,
   playerDetector = new PlaceholderPlayerDetector(),
@@ -86,15 +114,16 @@ export async function stepDetectPlayers({
       progress: 0,
     });
 
-    // 1. Get video info from match document
+    // 1. Get video info (supports videoId or legacy match.video)
+    const videoInfo = await getVideoInfo(matchRef, videoId);
+    const storagePath = videoInfo.storagePath;
+    const durationSec = videoInfo.durationSec ?? 0;
+
+    // Get match settings for processing mode
     const matchSnap = await matchRef.get();
     const matchData = matchSnap.data() as {
-      video?: { storagePath?: string; durationSec?: number };
       settings?: { processingMode?: ProcessingMode };
     } | undefined;
-
-    const storagePath = matchData?.video?.storagePath;
-    const durationSec = matchData?.video?.durationSec ?? 0;
 
     if (!storagePath) {
       throw new DetectionError("detection", "video.storagePath missing", {

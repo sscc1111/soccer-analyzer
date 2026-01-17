@@ -49,26 +49,27 @@ describe("07b_detectEventsWindowed", () => {
 
       const windows = generateWindows(segments);
 
-      // Expected: 60s window size, 15s overlap, 45s step
+      // Phase 1.2: 60s window size, 30s overlap (50%), 30s step
       // Window 0: 0-60
-      // Window 1: 45-105
-      // Window 2: 90-120
+      // Window 1: 30-90
+      // Window 2: 60-120
       expect(windows.length).toBeGreaterThan(1);
       expect(windows[0]).toMatchObject({
         windowId: "seg1_w0",
         absoluteStart: 0,
         absoluteEnd: 60,
-        overlap: { before: 0, after: 15 },
+        overlap: { before: 0, after: 30 },
       });
       expect(windows[1]).toMatchObject({
         windowId: "seg1_w1",
-        absoluteStart: 45,
-        absoluteEnd: 105,
-        overlap: { before: 15, after: 15 },
+        absoluteStart: 30,
+        absoluteEnd: 90,
+        overlap: { before: 30, after: 30 },
       });
     });
 
-    it("should skip stoppage segments when configured", () => {
+    it("should include stoppage segments for detecting fouls and substitutions", () => {
+      // Phase 1.4: ストッページセグメントも検出対象にする（ファウル、交代、負傷）
       const segments: VideoSegment[] = [
         {
           segmentId: "seg1",
@@ -92,10 +93,10 @@ describe("07b_detectEventsWindowed", () => {
 
       const windows = generateWindows(segments);
 
-      // Should only have windows for seg1 and seg3
+      // Phase 1.4: All segments should have windows including stoppage
       const windowSegmentIds = windows.map((w) => w.segmentContext.segmentId);
-      expect(windowSegmentIds).not.toContain("seg2");
       expect(windowSegmentIds).toContain("seg1");
+      expect(windowSegmentIds).toContain("seg2"); // Stoppage now included
       expect(windowSegmentIds).toContain("seg3");
     });
 
@@ -197,7 +198,8 @@ describe("07b_detectEventsWindowed", () => {
       expect(getFpsForSegmentType("active_play")).toBe(3);
       expect(getFpsForSegmentType("set_piece")).toBe(2);
       expect(getFpsForSegmentType("goal_moment")).toBe(5);
-      expect(getFpsForSegmentType("stoppage")).toBe(1);
+      // Phase 1.4: ストッページを低FPSで処理（ファウル、交代、負傷検出用）
+      expect(getFpsForSegmentType("stoppage")).toBe(0.5);
     });
   });
 
@@ -210,7 +212,8 @@ describe("07b_detectEventsWindowed", () => {
       expect(config).toHaveProperty("fpsBySegment");
       expect(config).toHaveProperty("parallelism");
       expect(config.defaultDurationSec).toBe(60);
-      expect(config.overlapSec).toBe(15);
+      // Phase 1.2: 50%オーバーラップで境界付近のイベント見逃しを防止
+      expect(config.overlapSec).toBe(30);
       expect(config.parallelism).toBe(5);
     });
   });
@@ -355,8 +358,9 @@ describe("07b_detectEventsWindowed", () => {
 
       const windows = generateWindows(segments);
 
-      // Should not create more than 100 windows per segment (safety limit)
-      expect(windows.length).toBeLessThanOrEqual(100);
+      // Should not create more than MAX_WINDOWS_PER_SEGMENT (200) + 1 final window per segment
+      // MAX_WINDOWS_PER_SEGMENT is 200, plus one additional final window to cover the tail
+      expect(windows.length).toBeLessThanOrEqual(201);
     });
 
     it("should batch windows according to parallelism config", () => {

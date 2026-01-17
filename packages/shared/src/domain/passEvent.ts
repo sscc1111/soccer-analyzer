@@ -49,6 +49,8 @@ export type PassOutcome = "complete" | "incomplete" | "intercepted";
 export type PassEventDoc = {
   eventId: string;
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   type: "pass";
 
   /** Frame number when pass was initiated */
@@ -83,6 +85,8 @@ export type PassEventDoc = {
 
   /** Pass characteristics */
   passType?: "short" | "medium" | "long" | "through" | "cross";
+  /** Pass direction relative to attack */
+  passDirection?: "forward" | "backward" | "lateral";
 
   /** Overall event confidence (0-1) */
   confidence: number;
@@ -99,6 +103,8 @@ export type PassEventDoc = {
   version: string;
   createdAt: string;
   updatedAt?: string;
+  /** Whether this event was merged from first and second half */
+  mergedFromHalves?: boolean;
 };
 
 /**
@@ -112,6 +118,8 @@ export type PassEventDoc = {
 export type CarryEventDoc = {
   eventId: string;
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   type: "carry";
 
   /** Track ID of the carrying player */
@@ -153,12 +161,27 @@ export type CarryEventDoc = {
    */
   distanceMeters?: number;
 
+  /**
+   * Phase 2.2.2: Whether this carry is classified as a dribble
+   * true = dribble (active running with ball against defenders)
+   * false = simple carry (low intensity movement with ball)
+   */
+  isDribble?: boolean;
+
+  /**
+   * Phase 2.2.2: Confidence in dribble classification (0-1)
+   * Higher confidence indicates stronger evidence of dribbling behavior
+   */
+  dribbleConfidence?: number;
+
   /** Overall event confidence (0-1) */
   confidence: number;
 
   /** Processing version */
   version: string;
   createdAt: string;
+  /** Whether this event was merged from first and second half */
+  mergedFromHalves?: boolean;
 };
 
 /**
@@ -175,6 +198,8 @@ export type TurnoverType = "lost" | "won";
 export type TurnoverEventDoc = {
   eventId: string;
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   type: "turnover";
   turnoverType: TurnoverType;
 
@@ -211,6 +236,8 @@ export type TurnoverEventDoc = {
   /** Processing version */
   version: string;
   createdAt: string;
+  /** Whether this event was merged from first and second half */
+  mergedFromHalves?: boolean;
 };
 
 /**
@@ -227,6 +254,8 @@ export type ShotResult = "goal" | "saved" | "blocked" | "missed" | "post";
 export type ShotEventDoc = {
   eventId: string;
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   type: "shot";
 
   /** Frame number when shot was taken */
@@ -255,6 +284,17 @@ export type ShotEventDoc = {
   /** Body part used */
   bodyPart?: "right_foot" | "left_foot" | "head" | "other";
 
+  /** Expected Goals (xG) - probability of scoring (0-1) */
+  xG?: number;
+  /** xG calculation factors */
+  xGFactors?: {
+    distanceFromGoal: number;
+    angleToGoal: number;
+    inPenaltyArea: boolean;
+    inGoalArea: boolean;
+    shotType?: string;
+  };
+
   /** Confidence in the detection (0-1) */
   confidence: number;
   /** Source of the event */
@@ -264,6 +304,8 @@ export type ShotEventDoc = {
   version: string;
   createdAt: string;
   updatedAt?: string;
+  /** Whether this event was merged from first and second half */
+  mergedFromHalves?: boolean;
 };
 
 /**
@@ -283,6 +325,8 @@ export type SetPieceOutcome = "goal" | "chance" | "cleared" | "foul" | "other";
 export type SetPieceEventDoc = {
   eventId: string;
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   type: "setPiece";
 
   /** Frame number when set piece started */
@@ -307,6 +351,18 @@ export type SetPieceEventDoc = {
   /** Description of what happened */
   description?: string;
 
+  /** Detailed outcome analysis (Section 3.2.2) */
+  outcomeDetails?: {
+    /** What happened after the set piece */
+    resultType: "shot" | "goal" | "cleared" | "turnover" | "continued_play" | "unknown";
+    /** Time elapsed from set piece to outcome (seconds) */
+    timeToOutcome: number;
+    /** Whether it created a scoring opportunity */
+    scoringChance: boolean;
+    /** Event ID of the outcome event (if any) */
+    outcomeEventId?: string;
+  };
+
   /** Confidence in the detection (0-1) */
   confidence: number;
   /** Source of the event */
@@ -316,6 +372,8 @@ export type SetPieceEventDoc = {
   version: string;
   createdAt: string;
   updatedAt?: string;
+  /** Whether this event was merged from first and second half */
+  mergedFromHalves?: boolean;
 };
 
 /**
@@ -334,6 +392,10 @@ export type TrackedEvent =
  */
 export type PendingReviewDoc = {
   eventId: string;
+  /** Match ID this review belongs to */
+  matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   eventType: "pass" | "carry" | "turnover";
   reason: "low_confidence" | "ambiguous_player" | "multiple_candidates";
   /** Alternative candidates if applicable */

@@ -9,27 +9,44 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { callGeminiApi, callGeminiApiWithCache, extractTextFromResponse, type Gemini3Request } from "../../gemini/gemini3Client";
-import type { TrackTeamMeta, TrackPlayerMapping, TeamId, GameFormat } from "@soccer/shared";
+import type { TrackTeamMeta, TeamId, GameFormat } from "@soccer/shared";
 import { GAME_FORMAT_INFO } from "@soccer/shared";
 import { getDb } from "../../firebase/admin";
 import { getValidCacheOrFallback, getCacheManager, type GeminiCacheDoc } from "../../gemini/cacheManager";
 import { defaultLogger as logger, ILogger } from "../../lib/logger";
 import { withRetry } from "../../lib/retry";
+import {
+  mergePlayerDetections,
+  recalculatePlayerConfidence,
+  validateJerseyNumberConsistency,
+  type RawPlayerDetection,
+} from "../../lib/playerTrackMatcher";
+import { calculateTrackingConsistency } from "../../lib/playerConfidenceCalculator";
+import type { TrackDoc } from "@soccer/shared";
 
-const PLAYER_ID_VERSION = "v1";
+const PLAYER_ID_VERSION = "v2";
 
 // Response schema validation
 const TeamColorsSchema = z.object({
   primaryColor: z.string(),
   secondaryColor: z.string().optional(),
   goalkeeperColor: z.string().optional(),
+  numberColor: z.string().optional(), // v2: jersey number color
 });
+
+const FallbackIdentifiersSchema = z.object({
+  bodyType: z.enum(["tall", "average", "short"]).nullable().optional(),
+  hairColor: z.string().nullable().optional(),
+  dominantPosition: z.enum(["defender", "midfielder", "forward", "goalkeeper"]).nullable().optional(),
+}).optional();
 
 const PlayerSchema = z.object({
   team: z.enum(["home", "away"]),
   jerseyNumber: z.number().nullable(),
   role: z.enum(["player", "goalkeeper"]),
   confidence: z.number().min(0).max(1),
+  fallbackIdentifiers: FallbackIdentifiersSchema,
+  trackingId: z.string().nullable().optional(), // v2: temporal tracking
 });
 
 const RefereeSchema = z.object({
@@ -50,6 +67,7 @@ type PlayersResponse = z.infer<typeof PlayersResponseSchema>;
 
 export type IdentifyPlayersGeminiOptions = {
   matchId: string;
+  videoId?: string;
   version: string;
   logger?: ILogger;
 };
@@ -104,7 +122,7 @@ export async function stepIdentifyPlayersGemini(
 
   // Get cache info (with fallback to direct file URI)
   // Phase 3.1: Pass step name for cache hit/miss tracking
-  const cache = await getValidCacheOrFallback(matchId, "identify_players_gemini");
+  const cache = await getValidCacheOrFallback(matchId, options.videoId, "identify_players_gemini");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot identify players", { matchId });
@@ -135,9 +153,109 @@ export async function stepIdentifyPlayersGemini(
   const prompt = await loadPrompt();
   const result = await identifyPlayersWithGemini(cache, prompt, gameFormat, matchId, stepLogger);
 
+  // Convert Gemini response to RawPlayerDetection format
+  const rawDetections: RawPlayerDetection[] = result.players.map((p) => ({
+    team: p.team,
+    jerseyNumber: p.jerseyNumber,
+    role: p.role,
+    confidence: p.confidence,
+    trackingId: p.trackingId || null,
+    fallbackIdentifiers: p.fallbackIdentifiers,
+  }));
+
+  // Fetch TrackDoc data to calculate tracking consistency (Section 5.2.2)
+  const trackingConsistencyMap = new Map<string, number>();
+  const trackIds = new Set(rawDetections.map((d) => d.trackingId).filter(Boolean));
+
+  if (trackIds.size > 0) {
+    stepLogger.info("Fetching TrackDoc data for tracking consistency calculation", {
+      matchId,
+      trackIdCount: trackIds.size,
+    });
+
+    // Get video metadata for frame count
+    const matchData = matchSnap.data();
+    const videoDuration = matchData?.videoDuration; // in seconds
+    const fps = matchData?.fps || 30; // default 30fps
+    const expectedFrameCount = videoDuration ? Math.floor(videoDuration * fps) : 0;
+
+    // Fetch TrackDocs in parallel
+    const trackDocsPromises = Array.from(trackIds).map(async (trackId) => {
+      if (!trackId) return null;
+      try {
+        const trackDocSnap = await matchRef.collection("tracks").doc(trackId).get();
+        if (trackDocSnap.exists) {
+          const trackDoc = trackDocSnap.data() as TrackDoc;
+          return { trackId, trackDoc };
+        }
+      } catch (error) {
+        stepLogger.warn("Failed to fetch TrackDoc", { trackId, error });
+      }
+      return null;
+    });
+
+    const trackDocsResults = await Promise.all(trackDocsPromises);
+
+    // Calculate tracking consistency for each trackId
+    for (const result of trackDocsResults) {
+      if (!result) continue;
+      const { trackId, trackDoc } = result;
+
+      const consistency = calculateTrackingConsistency(
+        trackDoc.frames,
+        expectedFrameCount || trackDoc.frames.length,
+        videoDuration
+      );
+
+      trackingConsistencyMap.set(trackId, consistency);
+    }
+
+    stepLogger.info("Tracking consistency calculation complete", {
+      matchId,
+      calculatedCount: trackingConsistencyMap.size,
+      avgConsistency:
+        trackingConsistencyMap.size > 0
+          ? (Array.from(trackingConsistencyMap.values()).reduce((a, b) => a + b, 0) /
+              trackingConsistencyMap.size).toFixed(3)
+          : "N/A",
+    });
+  }
+
+  // Merge duplicate player detections with tracking consistency (Section 5.1.2 + 5.2.2)
+  const matchingResult = mergePlayerDetections(rawDetections, matchId, trackingConsistencyMap);
+
+  stepLogger.info("Player detection merging complete", {
+    matchId,
+    totalDetections: matchingResult.stats.totalDetections,
+    uniquePlayers: matchingResult.stats.uniquePlayers,
+    mergedDetections: matchingResult.stats.mergedDetections,
+    withJerseyNumber: matchingResult.stats.withJerseyNumber,
+    withoutJerseyNumber: matchingResult.stats.withoutJerseyNumber,
+    avgConfidence: matchingResult.stats.avgConfidence.toFixed(3),
+  });
+
+  // Validate jersey number consistency
+  const consistencyCheck = validateJerseyNumberConsistency(matchingResult.trackMappings);
+  if (!consistencyCheck.valid) {
+    stepLogger.warn("Jersey number consistency issues detected", {
+      matchId,
+      issueCount: consistencyCheck.issues.length,
+      issues: consistencyCheck.issues,
+    });
+  }
+
+  // Recalculate confidence with additional context
+  for (const player of matchingResult.mergedPlayers) {
+    const updatedConfidence = recalculatePlayerConfidence(player, {
+      expectedPlayerCount: expectedPlayersPerTeam * 2,
+      detectedPlayerCount: matchingResult.stats.uniquePlayers,
+    });
+    player.confidence = updatedConfidence;
+  }
+
   // Group players by team
-  const homePlayers = result.players.filter((p) => p.team === "home");
-  const awayPlayers = result.players.filter((p) => p.team === "away");
+  const homePlayers = matchingResult.mergedPlayers.filter((p) => p.team === "home");
+  const awayPlayers = matchingResult.mergedPlayers.filter((p) => p.team === "away");
 
   // Save team colors to match settings
   await matchRef.set({
@@ -165,36 +283,26 @@ export async function stepIdentifyPlayersGemini(
   type DocWrite = { collection: string; id: string; data: unknown };
   const allDocs: DocWrite[] = [];
 
-  // Create synthetic track IDs for Gemini-identified players
-  for (let i = 0; i < result.players.length; i++) {
-    const player = result.players[i];
-    const trackId = matchId + "_gemini_player_" + i;
-
-    // Save track team meta
-    const teamMeta: TrackTeamMeta = {
-      trackId,
-      teamId: player.team as TeamId,
-      teamConfidence: player.confidence,
-      dominantColor: player.team === "home"
-        ? result.teams.home.primaryColor
-        : result.teams.away.primaryColor,
-      classificationMethod: "color_clustering", // Gemini uses visual analysis
-    };
-    allDocs.push({ collection: "trackTeamMetas", id: trackId, data: teamMeta });
-
-    // Save player mapping if jersey number detected
-    if (player.jerseyNumber !== null) {
-      const mapping: TrackPlayerMapping = {
+  // Use merged player data (Section 5.1.2)
+  for (const player of matchingResult.mergedPlayers) {
+    // Create TrackTeamMeta for each trackId associated with this player
+    for (const trackId of player.trackIds) {
+      const teamMeta: TrackTeamMeta = {
         trackId,
-        playerId: null,
-        jerseyNumber: player.jerseyNumber,
-        ocrConfidence: player.confidence,
-        source: "ocr",
-        needsReview: player.confidence < 0.8,
-        reviewReason: player.confidence < 0.8 ? "low_confidence" : undefined,
+        teamId: player.team as TeamId,
+        teamConfidence: player.confidence,
+        dominantColor: player.team === "home"
+          ? result.teams.home.primaryColor
+          : result.teams.away.primaryColor,
+        classificationMethod: "color_clustering", // Gemini uses visual analysis
       };
-      allDocs.push({ collection: "trackMappings", id: trackId, data: mapping });
+      allDocs.push({ collection: "trackTeamMetas", id: trackId, data: teamMeta });
     }
+  }
+
+  // Save TrackPlayerMappings (already created by mergePlayerDetections)
+  for (const mapping of matchingResult.trackMappings) {
+    allDocs.push({ collection: "trackMappings", id: mapping.trackId, data: mapping });
   }
 
   // Save referee data
@@ -291,8 +399,19 @@ async function identifyPlayersWithGemini(
 
   // Phase 3: Use context caching for cost reduction
   const useCache = cache.cacheId && cache.version !== "fallback";
+
+  // Calculate dynamic maxOutputTokens based on video duration
+  const videoDurationSec = cache.videoDurationSec || 600;
+  const baseTokens = 12288;
+  const tokensPerMinute = 800;
+  const maxOutputTokens = Math.min(
+    32768,
+    baseTokens + Math.ceil((videoDurationSec / 60) * tokensPerMinute)
+  );
+
   const generationConfig = {
     temperature: 0.2,
+    maxOutputTokens,
     responseMimeType: "application/json",
   };
 

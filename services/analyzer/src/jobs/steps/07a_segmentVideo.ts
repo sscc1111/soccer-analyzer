@@ -61,6 +61,7 @@ type SegmentationResponse = z.infer<typeof SegmentationResponseSchema>;
 
 export type SegmentVideoOptions = {
   matchId: string;
+  videoId?: string;
   version: string;
   logger?: ILogger;
 };
@@ -147,7 +148,7 @@ export async function stepSegmentVideo(
 
   // Get cache info (with fallback to direct file URI)
   // Phase 3.1: Pass step name for cache hit/miss tracking
-  const cache = await getValidCacheOrFallback(matchId, "segment_video");
+  const cache = await getValidCacheOrFallback(matchId, options.videoId, "segment_video");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found, cannot segment video", { matchId });
@@ -162,10 +163,21 @@ export async function stepSegmentVideo(
     };
   }
 
+  // Calculate dynamic maxOutputTokens based on video duration (for logging)
+  const videoDurationSec = cache.videoDurationSec || 600;
+  const baseTokens = 12288;
+  const tokensPerMinute = 800;
+  const calculatedMaxTokens = Math.min(
+    32768,
+    baseTokens + Math.ceil((videoDurationSec / 60) * tokensPerMinute)
+  );
+
   stepLogger.info("Using video for segmentation", {
     matchId,
     fileUri: cache.storageUri || cache.fileUri,
     hasCaching: cache.version !== "fallback",
+    videoDurationSec,
+    maxOutputTokens: calculatedMaxTokens,
   });
 
   const prompt = await loadPrompt();
@@ -273,8 +285,28 @@ async function segmentVideoWithGemini(
 
   // Phase 3: Use context caching for cost reduction
   const useCache = cache.cacheId && cache.version !== "fallback";
+
+  // Calculate dynamic maxOutputTokens based on video duration
+  const videoDurationSec = cache.videoDurationSec || 600;
+  const baseTokens = 12288;
+  const tokensPerMinute = 800;
+  const maxOutputTokens = Math.min(
+    32768,
+    baseTokens + Math.ceil((videoDurationSec / 60) * tokensPerMinute)
+  );
+
+  log.info("calling Gemini for video segmentation", {
+    cacheId: cache.cacheId,
+    fileUri: cache.storageUri || cache.fileUri,
+    model: modelId,
+    useCache,
+    videoDurationSec,
+    maxOutputTokens,
+  });
+
   const generationConfig = {
     temperature: 0.1, // Lower temperature for consistent segmentation
+    maxOutputTokens,
     responseMimeType: "application/json",
   };
 

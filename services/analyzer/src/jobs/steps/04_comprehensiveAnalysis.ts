@@ -44,6 +44,8 @@ export const COMPREHENSIVE_VERSION = "comprehensive_v1";
 
 export type ComprehensiveAnalysisStepOptions = {
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   version: string;
   logger?: ILogger;
 };
@@ -91,7 +93,7 @@ export async function stepComprehensiveAnalysis(
   const durationSec = matchData?.video?.durationSec;
 
   // Get cache info (with fallback to direct file URI)
-  const cache = await getValidCacheOrFallback(matchId, "comprehensive_analysis");
+  const cache = await getValidCacheOrFallback(matchId, options.videoId, "comprehensive_analysis");
 
   if (!cache) {
     stepLogger.error("No valid cache or file URI found", { matchId });

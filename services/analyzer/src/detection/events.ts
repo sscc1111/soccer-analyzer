@@ -788,6 +788,8 @@ export function convertBallForDetection(
  */
 export function extractPendingReviews(
   events: DetectedEvents,
+  matchId: string,
+  videoId?: string,
   reviewThreshold: number = DEFAULT_EVENT_CONFIG.reviewThreshold
 ): PendingReviewDoc[] {
   const pendingReviews: PendingReviewDoc[] = [];
@@ -801,6 +803,8 @@ export function extractPendingReviews(
 
     pendingReviews.push({
       eventId: pass.eventId,
+      matchId,
+      videoId,
       eventType: "pass",
       reason,
       candidates: buildPassCandidates(pass),
@@ -815,6 +819,8 @@ export function extractPendingReviews(
 
     pendingReviews.push({
       eventId: carry.eventId,
+      matchId,
+      videoId,
       eventType: "carry",
       reason: "low_confidence",
       resolved: false,
@@ -829,6 +835,8 @@ export function extractPendingReviews(
 
     pendingReviews.push({
       eventId: turnover.eventId,
+      matchId,
+      videoId,
       eventType: "turnover",
       reason: "low_confidence",
       resolved: false,

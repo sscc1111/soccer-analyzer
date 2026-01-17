@@ -30,11 +30,15 @@ export function useTracks(matchId: string | null): UseTracksResult {
   }, []);
 
   useEffect(() => {
+    // P1修正: アンマウント後のstate更新を防ぐフラグ
+    let mounted = true;
+
     if (!matchId) {
       setTracks([]);
       setMappings(new Map());
       setLoading(false);
-      return;
+      setError(null);
+      return () => { mounted = false; };
     }
 
     // Track loading state for both subscriptions
@@ -42,7 +46,7 @@ export function useTracks(matchId: string | null): UseTracksResult {
     let mappingsLoaded = false;
 
     const checkLoading = () => {
-      if (tracksLoaded && mappingsLoaded) {
+      if (mounted && tracksLoaded && mappingsLoaded) {
         setLoading(false);
       }
     };
@@ -54,6 +58,7 @@ export function useTracks(matchId: string | null): UseTracksResult {
     const unsubscribeTracks = onSnapshot(
       query(tracksRef, limit(100)),
       (snapshot) => {
+        if (!mounted) return;
         const loadedTracks: TrackDoc[] = [];
         snapshot.forEach((doc) => {
           const data = doc.data();
@@ -81,6 +86,7 @@ export function useTracks(matchId: string | null): UseTracksResult {
         checkLoading();
       },
       (err) => {
+        if (!mounted) return;
         console.error("Error loading tracks:", err);
         setError(err as Error);
         tracksLoaded = true;
@@ -91,6 +97,7 @@ export function useTracks(matchId: string | null): UseTracksResult {
     const unsubscribeMappings = onSnapshot(
       query(mappingsRef),
       (snapshot) => {
+        if (!mounted) return;
         const loadedMappings = new Map<string, TrackPlayerMapping>();
         snapshot.forEach((doc) => {
           const mapping = { trackId: doc.id, ...doc.data() } as TrackPlayerMapping;
@@ -101,6 +108,7 @@ export function useTracks(matchId: string | null): UseTracksResult {
         checkLoading();
       },
       (err) => {
+        if (!mounted) return;
         console.error("Error loading track mappings:", err);
         setError(err as Error);
         mappingsLoaded = true;
@@ -109,6 +117,7 @@ export function useTracks(matchId: string | null): UseTracksResult {
     );
 
     return () => {
+      mounted = false;
       unsubscribeTracks();
       unsubscribeMappings();
     };

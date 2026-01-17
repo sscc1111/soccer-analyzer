@@ -19,6 +19,8 @@ import type { TacticalAnalysisDoc, MatchSummaryDoc } from "@soccer/shared/src/do
 
 export interface SummaryAndTacticsHybridOptions {
   matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   version: string;
   logger?: ILogger;
 }

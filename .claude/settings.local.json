@@ -18,7 +18,10 @@
       "Bash(gcloud builds submit:*)",
       "Bash(gcloud run deploy:*)",
       "Bash(gcloud logging read:*)",
-      "Bash(gcloud builds describe:*)"
+      "Bash(gcloud builds describe:*)",
+      "Bash(npm test:*)",
+      "Bash(python3:*)",
+      "Bash(git log:*)"
     ],
     "deny": [],
     "ask": []
