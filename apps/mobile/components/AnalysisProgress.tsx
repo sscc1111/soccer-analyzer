@@ -1,4 +1,5 @@
 import { View, Text, ActivityIndicator } from "react-native";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "./ui/card";
 import { Progress } from "./ui/progress";
 import { ANALYSIS_STEP_INFO, type AnalysisProgress as AnalysisProgressType, type AnalysisStep } from "@soccer/shared";
@@ -8,6 +9,9 @@ type Props = {
   status: "idle" | "queued" | "running" | "partial" | "done" | "error";
   errorMessage?: string;
 };
+
+// エラー表示までの遅延（ミリ秒）- 一時的なエラーを無視するため
+const ERROR_DISPLAY_DELAY_MS = 3000;
 
 /**
  * Format seconds into human-readable time
@@ -90,6 +94,32 @@ function getCompletedSteps(currentStep: AnalysisStep): AnalysisStep[] {
  * Shows detailed step-by-step progress during analysis
  */
 export function AnalysisProgress({ progress, status, errorMessage }: Props) {
+  // エラー表示のデバウンス：一時的なエラーを無視して安定したエラーのみ表示
+  const [showError, setShowError] = useState(false);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (status === "error") {
+      // エラー状態が一定時間続いた場合のみ表示
+      errorTimerRef.current = setTimeout(() => {
+        setShowError(true);
+      }, ERROR_DISPLAY_DELAY_MS);
+    } else {
+      // エラー以外の状態になったらタイマーをクリアしてエラー表示をリセット
+      if (errorTimerRef.current) {
+        clearTimeout(errorTimerRef.current);
+        errorTimerRef.current = null;
+      }
+      setShowError(false);
+    }
+
+    return () => {
+      if (errorTimerRef.current) {
+        clearTimeout(errorTimerRef.current);
+      }
+    };
+  }, [status]);
+
   if (status === "idle") {
     return null;
   }
@@ -107,7 +137,8 @@ export function AnalysisProgress({ progress, status, errorMessage }: Props) {
     );
   }
 
-  if (status === "error") {
+  // エラー状態でも、デバウンス中は「分析中」として表示
+  if (status === "error" && showError) {
     return (
       <Card className="mb-4 border-destructive">
         <CardContent>
@@ -115,6 +146,20 @@ export function AnalysisProgress({ progress, status, errorMessage }: Props) {
           {errorMessage && (
             <Text className="text-sm text-muted-foreground">{errorMessage}</Text>
           )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // エラー状態だがデバウンス中の場合は「処理中」として表示
+  if (status === "error" && !showError) {
+    return (
+      <Card className="mb-4">
+        <CardContent>
+          <View className="flex-row items-center">
+            <ActivityIndicator size="small" className="mr-2" />
+            <Text className="text-foreground">処理中...</Text>
+          </View>
         </CardContent>
       </Card>
     );
