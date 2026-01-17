@@ -20,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../../../components/ui";
+import { PageHeader } from "../../../components/PageHeader";
 import { toast } from "../../../components/ui/toast";
 import { useMatch, useTracks } from "../../../lib/hooks";
 import { db } from "../../../lib/firebase/firestore";
@@ -159,15 +160,13 @@ export default function TracksScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      <PageHeader
+        title="Player Tracks"
+        subtitle="Confirm jersey numbers for detected players"
+        showBackButton
+      />
       <ScrollView className="flex-1">
         <View className="p-4">
-          <Text className="text-2xl font-semibold text-foreground mb-1">
-            Player Tracks
-          </Text>
-          <Text className="text-muted-foreground mb-4">
-            Confirm jersey numbers for detected players
-          </Text>
-
           {/* Summary Cards */}
           <View className="flex-row gap-3 mb-4">
             <Card className="flex-1">

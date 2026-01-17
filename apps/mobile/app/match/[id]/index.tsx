@@ -12,6 +12,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "../../../components/ui";
+import { PageHeader } from "../../../components/PageHeader";
 import { AnalysisProgress } from "../../../components/AnalysisProgress";
 import { useMatch, useStats, useEvents, usePendingReviews } from "../../../lib/hooks";
 import type { EventLabel } from "@soccer/shared";
@@ -116,22 +117,16 @@ export default function MatchDashboardScreen() {
       : 0;
 
   return (
-    <ScrollView className="flex-1 bg-background">
-      <View className="p-4">
-        {/* Header */}
-        <View className="flex-row items-center justify-between mb-4">
-          <View className="flex-1">
-            <Text className="text-2xl font-semibold text-foreground">
-              {match.title || "Untitled Match"}
-            </Text>
-            <Text className="text-muted-foreground">
-              {match.date ? new Date(match.date).toLocaleDateString() : "No date"}
-            </Text>
-          </View>
-          <Badge variant={getStatusVariant(status)}>{status}</Badge>
-        </View>
-
-        {/* Analysis Progress */}
+    <View className="flex-1 bg-background">
+      <PageHeader
+        title={match.title || "Untitled Match"}
+        subtitle={match.date ? new Date(match.date).toLocaleDateString() : "No date"}
+        rightElement={<Badge variant={getStatusVariant(status)}>{status}</Badge>}
+        showBackButton
+      />
+      <ScrollView className="flex-1">
+        <View className="p-4">
+          {/* Analysis Progress */}
         <AnalysisProgress
           progress={match.analysis?.progress}
           status={status}
@@ -304,7 +299,8 @@ export default function MatchDashboardScreen() {
             </CardContent>
           </Card>
         )}
-      </View>
-    </ScrollView>
+        </View>
+      </ScrollView>
+    </View>
   );
 }

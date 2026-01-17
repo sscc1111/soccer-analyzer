@@ -1,6 +1,7 @@
 import { View, Text, FlatList, Pressable, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { Button, Card, CardHeader, CardTitle, CardContent, Badge } from "../../components/ui";
+import { PageHeader } from "../../components/PageHeader";
 import { useMatches } from "../../lib/hooks";
 import type { MatchDoc } from "@soccer/shared";
 
@@ -94,14 +95,12 @@ export default function MatchesScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <View className="p-4 border-b border-border">
-        <View className="flex-row items-center justify-between">
-          <Text className="text-2xl font-semibold text-foreground">Matches</Text>
-          <Button onPress={() => router.push("/upload")}>
-            + New
-          </Button>
-        </View>
-      </View>
+      <PageHeader
+        title="Matches"
+        rightElement={
+          <Button onPress={() => router.push("/upload")}>+ New</Button>
+        }
+      />
 
       {loading ? (
         <View className="flex-1 items-center justify-center">

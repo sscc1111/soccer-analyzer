@@ -11,6 +11,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "../../../components/ui";
+import { PageHeader } from "../../../components/PageHeader";
 import { useStats, useMatch } from "../../../lib/hooks";
 import { metricKeys, type MetricKey } from "@soccer/shared";
 
@@ -314,14 +315,14 @@ export default function StatsScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background">
-      <View className="p-4">
-        <Text className="text-2xl font-semibold text-foreground mb-1">
-          Stats
-        </Text>
-        <Text className="text-muted-foreground mb-4">
-          {match?.title ?? "Match"} Analysis
-        </Text>
+    <View className="flex-1 bg-background">
+      <PageHeader
+        title="Stats"
+        subtitle={`${match?.title ?? "Match"} Analysis`}
+        showBackButton
+      />
+      <ScrollView className="flex-1">
+        <View className="p-4">
 
         {/* Confidence Warning */}
         {matchStats && (
@@ -424,7 +425,8 @@ export default function StatsScreen() {
             )}
           </TabsContent>
         </Tabs>
-      </View>
-    </ScrollView>
+        </View>
+      </ScrollView>
+    </View>
   );
 }

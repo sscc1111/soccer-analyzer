@@ -1,5 +1,6 @@
 import { View, Text, ActivityIndicator } from "react-native";
 import { Card, CardHeader, CardTitle, CardContent, Badge } from "./ui";
+import { getContrastingTextColor } from "../lib/utils/colorContrast";
 import type { TacticalAnalysisDoc } from "@soccer/shared";
 
 type TacticalInsightsProps = {
@@ -91,7 +92,7 @@ export function TacticalInsights({
                 className="w-12 h-12 rounded-full items-center justify-center mb-2"
                 style={{ backgroundColor: homeColor }}
               >
-                <Text className="text-white font-bold text-lg">H</Text>
+                <Text style={{ color: getContrastingTextColor(homeColor), fontWeight: "bold", fontSize: 18 }}>H</Text>
               </View>
               <Text className="text-foreground font-bold text-xl">
                 {analysis.formation.home}
@@ -103,7 +104,7 @@ export function TacticalInsights({
                 className="w-12 h-12 rounded-full items-center justify-center mb-2"
                 style={{ backgroundColor: awayColor }}
               >
-                <Text className="text-white font-bold text-lg">A</Text>
+                <Text style={{ color: getContrastingTextColor(awayColor), fontWeight: "bold", fontSize: 18 }}>A</Text>
               </View>
               <Text className="text-foreground font-bold text-xl">
                 {analysis.formation.away}

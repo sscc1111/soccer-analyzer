@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Card, CardContent, Badge } from "../../../components/ui";
+import { PageHeader } from "../../../components/PageHeader";
 import { useClips, useMatch } from "../../../lib/hooks";
 import type { ClipDoc, EventLabel } from "@soccer/shared";
 
@@ -126,6 +127,7 @@ export default function ClipsListScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      <PageHeader title="Clips" showBackButton />
       {/* Filter Tabs */}
       <View className="px-4 pt-4">
         <FlatList

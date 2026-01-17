@@ -3,6 +3,7 @@ import { View, Text, TextInput, ActivityIndicator, Pressable, ScrollView } from 
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { Button, Card, CardContent, Progress, Badge } from "../components/ui";
+import { PageHeader } from "../components/PageHeader";
 import { toast } from "../components/ui/toast";
 import { createMatch, updateMatch, getDefaultSettings } from "../lib/hooks";
 import { uploadVideo, type UploadProgress } from "../lib/firebase/storage";
@@ -138,12 +139,7 @@ export default function UploadScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="p-4 border-b border-border">
-        <Text className="text-2xl font-semibold text-foreground">
-          Upload Match Video
-        </Text>
-      </View>
+      <PageHeader title="Upload Match Video" showBackButton />
 
       <ScrollView className="flex-1">
         <View className="p-4">

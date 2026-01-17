@@ -20,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../../../components/ui";
+import { PageHeader } from "../../../components/PageHeader";
 import { toast } from "../../../components/ui/toast";
 import { useMatch, useTracks } from "../../../lib/hooks";
 import {
@@ -351,15 +352,13 @@ export default function EventReviewScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      <PageHeader
+        title="Event Review"
+        subtitle="Review and correct low-confidence events"
+        showBackButton
+      />
       <ScrollView className="flex-1">
         <View className="p-4">
-          <Text className="text-2xl font-semibold text-foreground mb-1">
-            Event Review
-          </Text>
-          <Text className="text-muted-foreground mb-4">
-            Review and correct low-confidence events
-          </Text>
-
           {/* Summary Card */}
           <Card className="mb-4">
             <CardContent className="py-3 flex-row items-center justify-between">

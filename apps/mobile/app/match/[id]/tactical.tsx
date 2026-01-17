@@ -6,13 +6,15 @@ import {
   ActivityIndicator,
   Pressable,
 } from "react-native";
-import { useLocalSearchParams, router, Stack } from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
 import { Card, CardContent, Button, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui";
+import { PageHeader } from "../../../components/PageHeader";
 import { TacticalView } from "../../../components/TacticalView";
 import { TacticalInsights } from "../../../components/TacticalInsights";
 import { MatchSummaryView } from "../../../components/MatchSummaryView";
 import { useMatch, useTacticalAnalysis, useMatchSummary } from "../../../lib/hooks";
 import { useLivePositions } from "../../../lib/hooks/useLivePositions";
+import { getContrastingTextColor } from "../../../lib/utils/colorContrast";
 import type { GameFormat } from "@soccer/shared";
 
 type ViewMode = "live" | "replay";
@@ -82,27 +84,15 @@ export default function TacticalViewScreen() {
   const predictedCount = positions.filter((p) => p.isPredicted).length;
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          title: "タクティカルビュー",
-          headerBackTitle: "戻る",
-        }}
+    <View className="flex-1 bg-background">
+      <PageHeader
+        title="タクティカルビュー"
+        subtitle={match?.title ?? "試合"}
+        showBackButton
       />
 
-      <ScrollView className="flex-1 bg-background">
+      <ScrollView className="flex-1">
         <View className="p-4">
-          {/* Header */}
-          <View className="mb-4">
-            <Text className="text-xl font-semibold text-foreground">
-              {match?.title ?? "試合"}
-            </Text>
-            <Text className="text-muted-foreground text-sm">
-              戦術分析 & ポジショニング
-            </Text>
-          </View>
-
           {/* Main Tabs */}
           <Tabs defaultValue="positions" className="mb-4">
             <TabsList>
@@ -247,23 +237,23 @@ export default function TacticalViewScreen() {
           </Card>
 
           {/* Selected Player Info */}
-          {selectedPlayer && (
+          {selectedPlayer && (() => {
+            const playerColor =
+              selectedPlayer.teamId === "home"
+                ? homeColor
+                : selectedPlayer.teamId === "away"
+                ? awayColor
+                : "#888888";
+            return (
             <Card className="mb-4">
               <CardContent className="py-3">
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center gap-3">
                     <View
                       className="w-10 h-10 rounded-full items-center justify-center"
-                      style={{
-                        backgroundColor:
-                          selectedPlayer.teamId === "home"
-                            ? homeColor
-                            : selectedPlayer.teamId === "away"
-                            ? awayColor
-                            : "#888888",
-                      }}
+                      style={{ backgroundColor: playerColor }}
                     >
-                      <Text className="text-white font-bold">
+                      <Text style={{ color: getContrastingTextColor(playerColor), fontWeight: "bold" }}>
                         {selectedPlayer.jerseyNumber ?? "?"}
                       </Text>
                     </View>
@@ -290,7 +280,8 @@ export default function TacticalViewScreen() {
                 </View>
               </CardContent>
             </Card>
-          )}
+            );
+          })()}
 
           {/* Legend */}
           <Card className="mb-4">
@@ -374,6 +365,6 @@ export default function TacticalViewScreen() {
           </Tabs>
         </View>
       </ScrollView>
-    </>
+    </View>
   );
 }

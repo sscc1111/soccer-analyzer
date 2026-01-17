@@ -1,6 +1,7 @@
 import { View, Text, ActivityIndicator, Pressable } from "react-native";
 import { router } from "expo-router";
 import { Card, CardHeader, CardTitle, CardContent, Badge } from "./ui";
+import { getContrastingTextColor } from "../lib/utils/colorContrast";
 import type { MatchSummaryDoc, KeyMoment, PlayerHighlight } from "@soccer/shared";
 
 type MatchSummaryViewProps = {
@@ -84,13 +85,15 @@ function PlayerHighlightCard({
   highlight: PlayerHighlight;
   color: string;
 }) {
+  const textColor = getContrastingTextColor(color);
+
   return (
     <View className="flex-row items-center gap-3 py-2">
       <View
         className="w-10 h-10 rounded-full items-center justify-center"
         style={{ backgroundColor: color }}
       >
-        <Text className="text-white font-bold">
+        <Text style={{ color: textColor, fontWeight: "bold" }}>
           {highlight.jerseyNumber ?? "?"}
         </Text>
       </View>
@@ -159,7 +162,7 @@ export function MatchSummaryView({
                   className="w-12 h-12 rounded-full items-center justify-center mb-1"
                   style={{ backgroundColor: homeColor }}
                 >
-                  <Text className="text-white font-bold text-xl">
+                  <Text style={{ color: getContrastingTextColor(homeColor), fontWeight: "bold", fontSize: 20 }}>
                     {summary.score.home}
                   </Text>
                 </View>
@@ -171,7 +174,7 @@ export function MatchSummaryView({
                   className="w-12 h-12 rounded-full items-center justify-center mb-1"
                   style={{ backgroundColor: awayColor }}
                 >
-                  <Text className="text-white font-bold text-xl">
+                  <Text style={{ color: getContrastingTextColor(awayColor), fontWeight: "bold", fontSize: 20 }}>
                     {summary.score.away}
                   </Text>
                 </View>

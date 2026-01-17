@@ -15,6 +15,7 @@ import {
   CardTitle,
   Button,
 } from "../../components/ui";
+import { PageHeader } from "../../components/PageHeader";
 import { toast } from "../../components/ui/toast";
 import { useDefaultSettings, useNotifications, useNotificationStatus } from "../../lib/hooks";
 import type { DefaultSettings, NotificationSettings } from "../../lib/hooks";
@@ -357,14 +358,12 @@ export default function AppSettingsScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      <PageHeader
+        title="Team Settings"
+        subtitle="Default settings applied to new matches."
+      />
       <ScrollView>
         <View className="p-4">
-        <Text className="text-2xl font-semibold text-foreground mb-1">
-          Team Settings
-        </Text>
-        <Text className="text-muted-foreground mb-6">
-          Default settings applied to new matches.
-        </Text>
 
         {/* Game Format */}
         <Card className="mb-4">

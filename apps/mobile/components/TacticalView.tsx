@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { View, Text, Dimensions } from "react-native";
+import { getContrastingTextStyle } from "../lib/utils/colorContrast";
 
 /**
  * Standard field dimensions in meters
@@ -153,7 +154,7 @@ export function TacticalView({
             {showJerseyNumbers && player.jerseyNumber !== undefined && (
               <Text
                 style={{
-                  color: "#ffffff",
+                  ...getContrastingTextStyle(color),
                   fontSize: 10,
                   fontWeight: "bold",
                 }}

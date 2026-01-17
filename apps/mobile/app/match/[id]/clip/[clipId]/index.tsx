@@ -24,6 +24,7 @@ import {
   DialogContent,
   DialogFooter,
 } from "../../../../../components/ui";
+import { PageHeader } from "../../../../../components/PageHeader";
 import { toast } from "../../../../../components/ui/toast";
 import type { ClipDoc, EventDoc, MatchDoc } from "@soccer/shared";
 
@@ -172,9 +173,15 @@ export default function ClipDetailScreen() {
   const taggedPlayers = event?.involved?.players ?? [];
 
   return (
-    <ScrollView className="flex-1 bg-background">
-      {/* Video Player */}
-      <View className="aspect-video bg-black">
+    <View className="flex-1 bg-background">
+      <PageHeader
+        title={title}
+        subtitle={`${formatTime(clip.t0)} - ${formatTime(clip.t1)}`}
+        showBackButton
+      />
+      <ScrollView className="flex-1">
+        {/* Video Player */}
+        <View className="aspect-video bg-black">
         {videoUrlLoading ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color="rgb(99, 102, 241)" />
@@ -196,23 +203,16 @@ export default function ClipDetailScreen() {
         )}
       </View>
 
-      <View className="p-4">
-        {/* Header Info */}
-        <View className="flex-row items-center gap-2 mb-2">
-          <Badge variant="secondary">{label}</Badge>
-          <Badge variant={getConfidenceVariant(confidence)}>
-            {Math.round(confidence * 100)}% confidence
-          </Badge>
-        </View>
+        <View className="p-4">
+          {/* Header Info */}
+          <View className="flex-row items-center gap-2 mb-4">
+            <Badge variant="secondary">{label}</Badge>
+            <Badge variant={getConfidenceVariant(confidence)}>
+              {Math.round(confidence * 100)}% confidence
+            </Badge>
+          </View>
 
-        <Text className="text-2xl font-semibold text-foreground mb-1">
-          {title}
-        </Text>
-        <Text className="text-muted-foreground mb-4">
-          {formatTime(clip.t0)} - {formatTime(clip.t1)}
-        </Text>
-
-        {/* Summary */}
+          {/* Summary */}
         {clip.gemini?.summary && (
           <Card className="mb-4">
             <CardHeader>
@@ -283,7 +283,8 @@ export default function ClipDetailScreen() {
             )}
           </CardContent>
         </Card>
-      </View>
+        </View>
+      </ScrollView>
 
       {/* Player Tagging Dialog */}
       <Dialog open={tagDialogOpen} onOpenChange={setTagDialogOpen}>
@@ -327,6 +328,6 @@ export default function ClipDetailScreen() {
           </Button>
         </DialogFooter>
       </Dialog>
-    </ScrollView>
+    </View>
   );
 }

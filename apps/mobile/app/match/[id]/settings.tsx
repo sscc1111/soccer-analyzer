@@ -23,6 +23,7 @@ import {
   DialogContent,
   DialogFooter,
 } from "../../../components/ui";
+import { PageHeader } from "../../../components/PageHeader";
 import { toast } from "../../../components/ui/toast";
 import { useMatch, updateMatch, useDefaultSettings } from "../../../lib/hooks";
 import type { MatchSettings, GameFormat, ProcessingMode } from "@soccer/shared";
@@ -332,16 +333,15 @@ export default function SettingsScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background">
-      <View className="p-4">
-        <Text className="text-2xl font-semibold text-foreground mb-1">
-          Match Settings
-        </Text>
-        <Text className="text-muted-foreground mb-4">
-          Fine-tune settings for this specific match.
-        </Text>
-
-        {usingDefaults && (
+    <View className="flex-1 bg-background">
+      <PageHeader
+        title="Match Settings"
+        subtitle="Fine-tune settings for this specific match."
+        showBackButton
+      />
+      <ScrollView className="flex-1">
+        <View className="p-4">
+          {usingDefaults && (
           <View className="bg-muted/50 rounded-lg p-3 mb-4 flex-row items-center">
             <Badge variant="secondary" className="mr-2">Defaults</Badge>
             <Text className="text-muted-foreground text-sm flex-1">
@@ -714,7 +714,8 @@ export default function SettingsScreen() {
             "Save Settings"
           )}
         </Button>
-      </View>
+        </View>
+      </ScrollView>
 
       {/* Confirmation Dialog */}
       <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
@@ -741,6 +742,6 @@ export default function SettingsScreen() {
           </Button>
         </DialogFooter>
       </Dialog>
-    </ScrollView>
+    </View>
   );
 }
