@@ -32,7 +32,7 @@ steps:
       - '--timeout=3600'
       - '--concurrency=10'
       - '--max-instances=5'
-      - '--set-env-vars=NODE_ENV=production,GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=us-central1,GEMINI_LOCATION=us-central1,GEMINI_MODEL=gemini-2.5-flash-lite,STORAGE_BUCKET=$PROJECT_ID.firebasestorage.app,ANALYZER_TIER=1,GEMINI_CONTEXT_CACHE_ENABLED=true,GEMINI_VIDEO_UPLOAD_FULL=true,PROMPT_VERSION=v3,USE_MULTIPASS_DETECTION=true,USE_CONSOLIDATED_ANALYSIS=false,USE_HYBRID_PIPELINE=false'
+      - '--set-env-vars=NODE_ENV=production,GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=us-central1,GEMINI_LOCATION=us-central1,GEMINI_MODEL=gemini-2.5-flash,STORAGE_BUCKET=$PROJECT_ID.firebasestorage.app,ANALYZER_TIER=1,GEMINI_CONTEXT_CACHE_ENABLED=true,GEMINI_VIDEO_UPLOAD_FULL=true,PROMPT_VERSION=v3,USE_MULTIPASS_DETECTION=true,USE_CONSOLIDATED_ANALYSIS=false,USE_HYBRID_PIPELINE=false'
 
 images:
   - 'gcr.io/$PROJECT_ID/soccer-analyzer:latest'
