@@ -49,6 +49,18 @@ export const onJobCreated = onDocumentCreated(
 
     await event.data?.ref.set({ status: "running", step: "invoke_analyzer", updatedAt: now }, { merge: true });
 
+    // matchのstatusを即座にqueuedに更新（古いerror状態を上書き）
+    await db
+      .collection("matches")
+      .doc(matchId)
+      .set(
+        {
+          analysis: { status: "queued", errorMessage: null },
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       const token = process.env.ANALYZER_TOKEN;
@@ -71,14 +83,14 @@ export const onJobCreated = onDocumentCreated(
     } catch (err: any) {
       const message = err?.message ?? String(err);
       console.error(`[onJobCreated] Error:`, message);
+      // ジョブのstatusのみ更新（matchのstatusはパイプライン側で管理）
+      // Cloud Runが処理を続行している可能性があるため、matchのstatusをerrorにしない
       await event.data?.ref.set(
         { status: "error", error: message, updatedAt: new Date().toISOString() },
         { merge: true }
       );
-      await db
-        .collection("matches")
-        .doc(matchId)
-        .set({ analysis: { status: "error", lastRunAt: new Date().toISOString() } }, { merge: true });
+      // 注意: matchのanalysis.statusは更新しない
+      // パイプラインが実際に失敗した場合のみ、パイプライン側でerrorを設定する
     }
   }
 );
