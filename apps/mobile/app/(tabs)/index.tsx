@@ -82,9 +82,9 @@ function MatchCard({ match }: { match: MatchDoc }) {
 function EmptyState() {
   return (
     <View className="flex-1 items-center justify-center py-12">
-      <Text className="text-muted-foreground text-lg mb-2">No matches yet</Text>
+      <Text className="text-muted-foreground text-lg mb-2">まだ試合がありません</Text>
       <Text className="text-muted-foreground text-sm text-center px-8">
-        Upload a match video to get started with analysis.
+        試合を作成して分析を始めましょう
       </Text>
     </View>
   );
@@ -98,7 +98,7 @@ export default function MatchesScreen() {
       <PageHeader
         title="Matches"
         rightElement={
-          <Button onPress={() => router.push("/upload")}>+ New</Button>
+          <Button onPress={() => router.push("/upload")}>+ 新規作成</Button>
         }
       />
 

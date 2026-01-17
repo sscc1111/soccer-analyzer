@@ -5,6 +5,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Pressable,
+  Switch,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Card, CardContent, Button, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui";
@@ -14,6 +15,7 @@ import { TacticalInsights } from "../../../components/TacticalInsights";
 import { MatchSummaryView } from "../../../components/MatchSummaryView";
 import { useMatch, useTacticalAnalysis, useMatchSummary } from "../../../lib/hooks";
 import { useLivePositions } from "../../../lib/hooks/useLivePositions";
+import { useMatchEvents, type EventFilter } from "../../../lib/hooks/useMatchEvents";
 import { getContrastingTextColor } from "../../../lib/utils/colorContrast";
 import type { GameFormat } from "@soccer/shared";
 
@@ -34,9 +36,17 @@ export default function TacticalViewScreen() {
   const { positions, ball, loading: positionsLoading, error: positionsError } = useLivePositions(id);
   const { analysis: tacticalAnalysis, loading: analysisLoading, error: analysisError } = useTacticalAnalysis(id);
   const { summary: matchSummary, loading: summaryLoading, error: summaryError } = useMatchSummary(id);
+  const {
+    filteredEvents,
+    loading: eventsLoading,
+    error: eventsError,
+    filter: eventFilter,
+    setFilter: setEventFilter,
+  } = useMatchEvents(id, { types: ["shot"] }); // Default to showing only shots
 
   const [viewMode, setViewMode] = useState<ViewMode>("live");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const [showEvents, setShowEvents] = useState<boolean>(true);
 
   const gameFormat = (match?.settings?.gameFormat as GameFormat) ?? "eleven";
   const homeColor = match?.settings?.teamColors?.home ?? "#ef4444";
@@ -178,6 +188,116 @@ export default function TacticalViewScreen() {
             )}
           </View>
 
+          {/* Event Controls (Phase 8) */}
+          <Card className="mb-4">
+            <CardContent className="py-3">
+              <View className="flex-row items-center justify-between mb-3">
+                <Text className="text-foreground font-medium">イベント表示</Text>
+                <Switch
+                  value={showEvents}
+                  onValueChange={setShowEvents}
+                  trackColor={{ false: "#767577", true: "#81b0ff" }}
+                  thumbColor={showEvents ? "#4F46E5" : "#f4f3f4"}
+                />
+              </View>
+
+              {showEvents && (
+                <View className="gap-2">
+                  <Text className="text-muted-foreground text-xs mb-1">表示するイベント</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    <Pressable
+                      onPress={() => setEventFilter({
+                        ...eventFilter,
+                        types: eventFilter.types?.includes("shot")
+                          ? eventFilter.types.filter((t) => t !== "shot")
+                          : [...(eventFilter.types ?? []), "shot"],
+                      })}
+                      className={`py-1 px-3 rounded-full ${
+                        eventFilter.types?.includes("shot") ? "bg-primary" : "bg-muted"
+                      }`}
+                    >
+                      <Text
+                        className={`text-sm ${
+                          eventFilter.types?.includes("shot")
+                            ? "text-primary-foreground"
+                            : "text-foreground"
+                        }`}
+                      >
+                        ⚽ シュート
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setEventFilter({
+                        ...eventFilter,
+                        types: eventFilter.types?.includes("pass")
+                          ? eventFilter.types.filter((t) => t !== "pass")
+                          : [...(eventFilter.types ?? []), "pass"],
+                      })}
+                      className={`py-1 px-3 rounded-full ${
+                        eventFilter.types?.includes("pass") ? "bg-primary" : "bg-muted"
+                      }`}
+                    >
+                      <Text
+                        className={`text-sm ${
+                          eventFilter.types?.includes("pass")
+                            ? "text-primary-foreground"
+                            : "text-foreground"
+                        }`}
+                      >
+                        → パス
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setEventFilter({
+                        ...eventFilter,
+                        types: eventFilter.types?.includes("turnover")
+                          ? eventFilter.types.filter((t) => t !== "turnover")
+                          : [...(eventFilter.types ?? []), "turnover"],
+                      })}
+                      className={`py-1 px-3 rounded-full ${
+                        eventFilter.types?.includes("turnover") ? "bg-primary" : "bg-muted"
+                      }`}
+                    >
+                      <Text
+                        className={`text-sm ${
+                          eventFilter.types?.includes("turnover")
+                            ? "text-primary-foreground"
+                            : "text-foreground"
+                        }`}
+                      >
+                        ⚠ ターンオーバー
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setEventFilter({
+                        ...eventFilter,
+                        types: eventFilter.types?.includes("setPiece")
+                          ? eventFilter.types.filter((t) => t !== "setPiece")
+                          : [...(eventFilter.types ?? []), "setPiece"],
+                      })}
+                      className={`py-1 px-3 rounded-full ${
+                        eventFilter.types?.includes("setPiece") ? "bg-primary" : "bg-muted"
+                      }`}
+                    >
+                      <Text
+                        className={`text-sm ${
+                          eventFilter.types?.includes("setPiece")
+                            ? "text-primary-foreground"
+                            : "text-foreground"
+                        }`}
+                      >
+                        🚩 セットプレー
+                      </Text>
+                    </Pressable>
+                  </View>
+                  <Text className="text-muted-foreground text-xs mt-1">
+                    表示中: {filteredEvents.length}件
+                  </Text>
+                </View>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Tactical View */}
           <Card className="mb-4 overflow-hidden">
             <CardContent className="p-0">
@@ -231,6 +351,8 @@ export default function TacticalViewScreen() {
                   awayColor={awayColor}
                   showJerseyNumbers
                   onPlayerTap={handlePlayerTap}
+                  events={filteredEvents}
+                  showEvents={showEvents}
                 />
               )}
             </CardContent>
@@ -319,6 +441,57 @@ export default function TacticalViewScreen() {
                   <View className="w-4 h-4 rounded-full bg-white border border-black" />
                   <Text className="text-muted-foreground text-sm">ボール</Text>
                 </View>
+
+                {/* Event Legend (Phase 8) */}
+                {showEvents && (
+                  <>
+                    <View className="h-px bg-border my-1" />
+                    <Text className="text-foreground font-medium text-sm mb-1">イベント</Text>
+                    <View className="flex-row items-center gap-2">
+                      <View
+                        className="w-5 h-5 rounded-full items-center justify-center"
+                        style={{ backgroundColor: "#FFD700", borderWidth: 2, borderColor: "#FFA000" }}
+                      >
+                        <Text style={{ fontSize: 10 }}>⚽</Text>
+                      </View>
+                      <Text className="text-muted-foreground text-sm">ゴール</Text>
+                    </View>
+                    <View className="flex-row items-center gap-2">
+                      <View
+                        className="w-4 h-4 rounded-full"
+                        style={{ backgroundColor: homeColor }}
+                      />
+                      <Text className="text-muted-foreground text-sm">シュート</Text>
+                    </View>
+                    <View className="flex-row items-center gap-2">
+                      <View
+                        className="w-4 h-4 rounded-full items-center justify-center"
+                        style={{ backgroundColor: "rgba(76, 175, 80, 0.7)" }}
+                      >
+                        <Text style={{ fontSize: 8, color: "#fff" }}>→</Text>
+                      </View>
+                      <Text className="text-muted-foreground text-sm">パス (成功)</Text>
+                    </View>
+                    <View className="flex-row items-center gap-2">
+                      <View
+                        className="w-4 h-4 rounded-full items-center justify-center"
+                        style={{ backgroundColor: "rgba(244, 67, 54, 0.8)" }}
+                      >
+                        <Text style={{ fontSize: 8, color: "#fff" }}>×</Text>
+                      </View>
+                      <Text className="text-muted-foreground text-sm">ターンオーバー (ロスト)</Text>
+                    </View>
+                    <View className="flex-row items-center gap-2">
+                      <View
+                        className="w-4 h-4 rounded items-center justify-center"
+                        style={{ backgroundColor: "rgba(156, 39, 176, 0.8)" }}
+                      >
+                        <Text style={{ fontSize: 8 }}>🚩</Text>
+                      </View>
+                      <Text className="text-muted-foreground text-sm">セットプレー</Text>
+                    </View>
+                  </>
+                )}
               </View>
             </CardContent>
           </Card>

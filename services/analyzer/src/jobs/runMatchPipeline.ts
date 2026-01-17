@@ -17,6 +17,7 @@ import { stepDetectEventsWindowed, type RawEvent, type DetectEventsWindowedResul
 import { stepDeduplicateEvents } from "./steps/07c_deduplicateEvents";
 import { stepVerifyEvents } from "./steps/07d_verifyEvents";
 import { stepSupplementClipsForUncoveredEvents } from "./steps/07e_supplementClipsForUncoveredEvents";
+import { stepDetectAssists } from "./steps/07e_detectAssists";
 import { stepDetectPlayers } from "./steps/07_detectPlayers";
 import { stepIdentifyPlayersGemini } from "./steps/08_identifyPlayersGemini";
 import { stepClassifyTeams } from "./steps/08_classifyTeams";
@@ -428,7 +429,16 @@ export async function runMatchPipeline({ matchId, jobId, type }: PipelineOptions
               })
             );
 
-            // Step 5: Supplement clips for uncovered events (Phase 2.2a)
+            // Step 5: Detect assists from goals and passes (Phase 6)
+            await runWithRetry("detect_assists", () =>
+              stepDetectAssists({
+                matchId,
+                version: runVersion,
+                logger,
+              })
+            );
+
+            // Step 6: Supplement clips for uncovered events (Phase 2.2a)
             await runWithRetry("supplement_clips", () =>
               stepSupplementClipsForUncoveredEvents({
                 matchId,

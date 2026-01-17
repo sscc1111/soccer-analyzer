@@ -118,7 +118,7 @@ export default function UploadScreen() {
       });
 
       setUploadState("done");
-      toast({ title: "Upload complete!", variant: "success" });
+      toast({ title: "作成完了!", variant: "success" });
 
       // Navigate to match dashboard
       setTimeout(() => {
@@ -127,7 +127,7 @@ export default function UploadScreen() {
     } catch (err: any) {
       setUploadState("error");
       setErrorMsg(err.message || "Upload failed");
-      toast({ title: "Upload failed", message: err.message, variant: "error" });
+      toast({ title: "作成に失敗しました", message: err.message, variant: "error" });
     }
   };
 
@@ -139,23 +139,23 @@ export default function UploadScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <PageHeader title="Upload Match Video" showBackButton />
+      <PageHeader title="試合を作成" showBackButton />
 
       <ScrollView className="flex-1">
         <View className="p-4">
           <Card className="mb-4">
             <CardContent className="pt-4">
-              <Text className="text-foreground mb-2">Match Title</Text>
+              <Text className="text-foreground mb-2">試合タイトル</Text>
               <TextInput
                 className="bg-muted border border-border rounded-md px-3 py-2 text-foreground mb-4"
-                placeholder="e.g., vs Blue Eagles"
+                placeholder="例: vs ブルーイーグルス"
                 placeholderTextColor="rgb(170, 170, 170)"
                 value={title}
                 onChangeText={setTitle}
                 editable={uploadState === "idle"}
               />
 
-              <Text className="text-foreground mb-2">Match Date</Text>
+              <Text className="text-foreground mb-2">試合日</Text>
               <TextInput
                 className="bg-muted border border-border rounded-md px-3 py-2 text-foreground mb-4"
                 placeholder="YYYY-MM-DD"
@@ -169,7 +169,7 @@ export default function UploadScreen() {
 
           <Card className="mb-4">
             <CardContent className="pt-4">
-              <Text className="text-foreground mb-3">Video</Text>
+              <Text className="text-foreground mb-3">動画</Text>
 
               {!videoUri ? (
                 <Button
@@ -177,12 +177,12 @@ export default function UploadScreen() {
                   onPress={handleSelectVideo}
                   className="w-full"
                 >
-                  Select Video from Library
+                  ライブラリから動画を選択
                 </Button>
               ) : (
                 <View>
                   <View className="flex-row items-center gap-2 mb-2">
-                    <Text className="text-success text-sm">Video selected</Text>
+                    <Text className="text-success text-sm">動画を選択済み</Text>
                     {videoDuration && (
                       <Badge variant="secondary">
                         {Math.floor(videoDuration / 60)}:{String(videoDuration % 60).padStart(2, "0")}
@@ -194,7 +194,7 @@ export default function UploadScreen() {
                   </Text>
                   {uploadState === "idle" && (
                     <Button variant="outline" onPress={handleSelectVideo}>
-                      Change Video
+                      動画を変更
                     </Button>
                   )}
                 </View>
@@ -206,9 +206,9 @@ export default function UploadScreen() {
           {videoUri && (
             <Card className="mb-4">
               <CardContent className="pt-4">
-                <Text className="text-foreground mb-2 font-medium">Processing Mode</Text>
+                <Text className="text-foreground mb-2 font-medium">処理モード</Text>
                 <Text className="text-muted-foreground text-sm mb-3">
-                  Choose analysis quality. You can change this later in settings.
+                  分析品質を選択してください。後で設定から変更できます。
                 </Text>
 
                 <View className="gap-2">
@@ -237,7 +237,7 @@ export default function UploadScreen() {
                             {modeInfo.label}
                           </Text>
                           {processingMode === mode && (
-                            <Badge variant="default">Selected</Badge>
+                            <Badge variant="default">選択中</Badge>
                           )}
                         </View>
 
@@ -275,7 +275,7 @@ export default function UploadScreen() {
           {uploadState === "uploading" && progress && (
             <Card className="mb-4">
               <CardContent className="pt-4">
-                <Text className="text-foreground mb-2">Uploading...</Text>
+                <Text className="text-foreground mb-2">アップロード中...</Text>
                 <Progress value={progress.progress} className="mb-2" />
                 <Text className="text-muted-foreground text-sm">
                   {Math.round(progress.progress)}% ({Math.round(progress.bytesTransferred / 1024 / 1024)}MB / {Math.round(progress.totalBytes / 1024 / 1024)}MB)
@@ -287,10 +287,10 @@ export default function UploadScreen() {
           {uploadState === "error" && errorMsg && (
             <Card className="mb-4 border-destructive">
               <CardContent className="pt-4">
-                <Text className="text-destructive mb-2">Error</Text>
+                <Text className="text-destructive mb-2">エラー</Text>
                 <Text className="text-muted-foreground text-sm mb-3">{errorMsg}</Text>
                 <Button variant="outline" onPress={handleRetry}>
-                  Retry
+                  再試行
                 </Button>
               </CardContent>
             </Card>
@@ -299,9 +299,9 @@ export default function UploadScreen() {
           {uploadState === "done" && (
             <Card className="mb-4 border-success">
               <CardContent className="pt-4">
-                <Text className="text-success">Upload Complete!</Text>
+                <Text className="text-success">アップロード完了!</Text>
                 <Text className="text-muted-foreground text-sm mt-1">
-                  Redirecting to match dashboard...
+                  試合ダッシュボードに移動中...
                 </Text>
               </CardContent>
             </Card>
@@ -313,7 +313,7 @@ export default function UploadScreen() {
               onPress={() => router.back()}
               className="flex-1"
             >
-              Cancel
+              キャンセル
             </Button>
             <Button
               onPress={handleUpload}
@@ -323,7 +323,7 @@ export default function UploadScreen() {
               {uploadState === "uploading" ? (
                 <ActivityIndicator size="small" color="white" />
               ) : (
-                "Upload"
+                "作成"
               )}
             </Button>
           </View>

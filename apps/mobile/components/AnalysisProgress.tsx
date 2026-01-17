@@ -69,24 +69,49 @@ function StepIndicator({ step, currentStep, completedSteps }: {
 }
 
 /**
+ * Pipeline step definitions
+ * The component detects which pipeline is being used based on the current step
+ */
+const PIPELINE_STEPS = {
+  // Hybrid 4-call pipeline (default)
+  hybrid: [
+    "extract_meta",
+    "segment_and_events",
+    "scenes_and_players",
+    "label_clips_hybrid",
+    "summary_and_tactics",
+  ] as AnalysisStep[],
+  // Consolidated 2-call pipeline
+  consolidated: [
+    "extract_meta",
+    "comprehensive_analysis",
+    "summary_and_tactics",
+  ] as AnalysisStep[],
+};
+
+/**
+ * Detect which pipeline is being used based on current step
+ */
+function detectPipeline(currentStep: AnalysisStep): AnalysisStep[] {
+  // Check if current step belongs to consolidated pipeline
+  if (currentStep === "comprehensive_analysis") {
+    return PIPELINE_STEPS.consolidated;
+  }
+  // Check if current step belongs to hybrid pipeline
+  if (["segment_and_events", "scenes_and_players", "label_clips_hybrid"].includes(currentStep)) {
+    return PIPELINE_STEPS.hybrid;
+  }
+  // Default to hybrid pipeline
+  return PIPELINE_STEPS.hybrid;
+}
+
+/**
  * Get list of completed steps based on current step
  */
-function getCompletedSteps(currentStep: AnalysisStep): AnalysisStep[] {
-  const allSteps: AnalysisStep[] = [
-    "extract_meta",
-    "detect_shots",
-    "extract_clips",
-    "label_clips",
-    "build_events",
-    "detect_players",
-    "classify_teams",
-    "detect_ball",
-    "detect_events",
-    "compute_stats",
-  ];
-  const currentIndex = allSteps.indexOf(currentStep);
+function getCompletedSteps(currentStep: AnalysisStep, pipelineSteps: AnalysisStep[]): AnalysisStep[] {
+  const currentIndex = pipelineSteps.indexOf(currentStep);
   if (currentIndex <= 0) return [];
-  return allSteps.slice(0, currentIndex);
+  return pipelineSteps.slice(0, currentIndex);
 }
 
 /**
@@ -192,19 +217,9 @@ export function AnalysisProgress({ progress, status, errorMessage }: Props) {
     );
   }
 
-  const completedSteps = getCompletedSteps(progress.currentStep);
-  const visibleSteps: AnalysisStep[] = [
-    "extract_meta",
-    "detect_shots",
-    "extract_clips",
-    "label_clips",
-    "build_events",
-    "detect_players",
-    "classify_teams",
-    "detect_ball",
-    "detect_events",
-    "compute_stats",
-  ];
+  // Detect pipeline and get completed steps
+  const pipelineSteps = detectPipeline(progress.currentStep);
+  const completedSteps = getCompletedSteps(progress.currentStep, pipelineSteps);
 
   return (
     <Card className="mb-4">
@@ -232,7 +247,7 @@ export function AnalysisProgress({ progress, status, errorMessage }: Props) {
         {/* Step list */}
         <View className="border-t border-border pt-2">
           <Text className="text-xs text-muted-foreground mb-2">処理ステップ</Text>
-          {visibleSteps.map((step) => (
+          {pipelineSteps.map((step) => (
             <StepIndicator
               key={step}
               step={step}

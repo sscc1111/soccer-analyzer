@@ -35,6 +35,27 @@ type BallPosition = {
   visible: boolean;
 };
 
+/**
+ * Event marker for tactical view display
+ * Phase 8: イベント位置→UI反映
+ */
+type EventMarker = {
+  /** Unique event ID */
+  id: string;
+  /** Field X position in meters (0 = center) */
+  x: number;
+  /** Field Y position in meters (0 = center) */
+  y: number;
+  /** Event type */
+  type: "pass" | "shot" | "turnover" | "setPiece";
+  /** Team that performed the action */
+  team: "home" | "away";
+  /** Event-specific result */
+  result?: string;
+  /** Confidence score (0-1) */
+  confidence?: number;
+};
+
 type Props = {
   /** Game format determines field size */
   gameFormat?: GameFormat;
@@ -52,6 +73,12 @@ type Props = {
   showJerseyNumbers?: boolean;
   /** Callback when player is tapped */
   onPlayerTap?: (playerId: string) => void;
+  /** Event markers to display (Phase 8) */
+  events?: EventMarker[];
+  /** Toggle event visibility (Phase 8) */
+  showEvents?: boolean;
+  /** Callback when event is tapped (Phase 8) */
+  onEventTap?: (eventId: string) => void;
 };
 
 /**
@@ -83,6 +110,9 @@ export function TacticalView({
   height: containerHeight,
   showJerseyNumbers = true,
   onPlayerTap,
+  events = [],
+  showEvents = true,
+  onEventTap,
 }: Props) {
   const field = FIELD[gameFormat];
   const screenWidth = Dimensions.get("window").width - 32; // padding
@@ -189,8 +219,128 @@ export function TacticalView({
           />
         );
       })()}
+
+      {/* Event Markers (Phase 8) */}
+      {showEvents && events.map((event) => {
+        const pos = fieldToScreen(event.x, event.y);
+        const markerStyle = getEventMarkerStyle(event, homeColor, awayColor);
+        const opacity = event.confidence ?? 0.8;
+
+        return (
+          <View
+            key={event.id}
+            style={{
+              position: "absolute",
+              left: pos.x - markerStyle.size / 2,
+              top: pos.y - markerStyle.size / 2,
+              width: markerStyle.size,
+              height: markerStyle.size,
+              borderRadius: markerStyle.borderRadius,
+              backgroundColor: markerStyle.backgroundColor,
+              opacity,
+              borderWidth: 2,
+              borderColor: markerStyle.borderColor,
+              justifyContent: "center",
+              alignItems: "center",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.3,
+              shadowRadius: 2,
+            }}
+            onTouchEnd={() => onEventTap?.(event.id)}
+          >
+            <Text style={{ fontSize: markerStyle.fontSize, color: markerStyle.textColor }}>
+              {markerStyle.icon}
+            </Text>
+          </View>
+        );
+      })}
     </View>
   );
+}
+
+/**
+ * Get visual style for event marker
+ * Phase 8: イベント位置→UI反映
+ */
+function getEventMarkerStyle(
+  event: EventMarker,
+  homeColor: string,
+  awayColor: string
+): {
+  icon: string;
+  backgroundColor: string;
+  borderColor: string;
+  textColor: string;
+  size: number;
+  borderRadius: number;
+  fontSize: number;
+} {
+  const teamColor = event.team === "home" ? homeColor : awayColor;
+
+  switch (event.type) {
+    case "shot": {
+      const isGoal = event.result === "goal";
+      return {
+        icon: isGoal ? "⚽" : "●",
+        backgroundColor: isGoal ? "#FFD700" : teamColor,
+        borderColor: isGoal ? "#FFA000" : "#ffffff",
+        textColor: isGoal ? "#000000" : "#ffffff",
+        size: isGoal ? 24 : 18,
+        borderRadius: isGoal ? 12 : 9,
+        fontSize: isGoal ? 14 : 10,
+      };
+    }
+
+    case "pass": {
+      const isComplete = event.result === "complete";
+      return {
+        icon: "→",
+        backgroundColor: isComplete ? "rgba(76, 175, 80, 0.7)" : "rgba(255, 152, 0, 0.7)",
+        borderColor: teamColor,
+        textColor: "#ffffff",
+        size: 14,
+        borderRadius: 7,
+        fontSize: 10,
+      };
+    }
+
+    case "turnover": {
+      const isLost = event.result === "lost";
+      return {
+        icon: isLost ? "×" : "✓",
+        backgroundColor: isLost ? "rgba(244, 67, 54, 0.8)" : "rgba(76, 175, 80, 0.8)",
+        borderColor: teamColor,
+        textColor: "#ffffff",
+        size: 16,
+        borderRadius: 8,
+        fontSize: 10,
+      };
+    }
+
+    case "setPiece": {
+      return {
+        icon: "🚩",
+        backgroundColor: "rgba(156, 39, 176, 0.8)",
+        borderColor: teamColor,
+        textColor: "#ffffff",
+        size: 18,
+        borderRadius: 4,
+        fontSize: 12,
+      };
+    }
+
+    default:
+      return {
+        icon: "•",
+        backgroundColor: teamColor,
+        borderColor: "#ffffff",
+        textColor: "#ffffff",
+        size: 14,
+        borderRadius: 7,
+        fontSize: 10,
+      };
+  }
 }
 
 /**

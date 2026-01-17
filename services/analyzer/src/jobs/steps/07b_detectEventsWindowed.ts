@@ -54,8 +54,13 @@ export interface AnalysisWindow {
 
 /**
  * Raw event from window analysis (before deduplication)
+ * Note: This interface must be compatible with the RawEvent in deduplication.ts
  */
 export interface RawEvent {
+  /** Match ID this event belongs to */
+  matchId: string;
+  /** Video ID for split video support (firstHalf/secondHalf/single) */
+  videoId?: string;
   windowId: string;
   relativeTimestamp: number; // Relative to window start
   absoluteTimestamp: number; // Relative to video start
@@ -63,6 +68,9 @@ export interface RawEvent {
   team: "home" | "away";
   player?: string;
   zone?: "defensive_third" | "middle_third" | "attacking_third";
+  // Phase 3: Position estimation (v4)
+  position?: { x: number; y: number };  // Normalized 0-100 coordinates
+  positionConfidence?: number;  // 0-1 confidence in position estimate
   details: {
     passType?: "short" | "medium" | "long" | "through" | "cross";
     outcome?: "complete" | "incomplete" | "intercepted";
@@ -86,8 +94,8 @@ export interface RawEvent {
 
 const WINDOW_CONFIG = {
   defaultDurationSec: 60,
-  // Phase 1.2: 50%オーバーラップで境界付近のイベント見逃しを防止
-  overlapSec: 30,
+  // Phase 2.9: 25%オーバーラップに削減（重複検出を減らす）
+  overlapSec: 15,
   fpsBySegment: {
     active_play: 3,
     set_piece: 2,
@@ -100,8 +108,8 @@ const WINDOW_CONFIG = {
 };
 
 // Prompt version
-// Phase 1.1: v3にアップグレード（Few-Shotサンプル追加版）
-const PROMPT_VERSION = process.env.PROMPT_VERSION || "v3";
+// Phase 3: v4にアップグレード（位置推定機能追加版）
+const PROMPT_VERSION = process.env.PROMPT_VERSION || "v4";
 
 // ============================================================================
 // Zod Schemas (v2 format) - With robust field name normalization
@@ -175,6 +183,13 @@ function normalizeEventFields(raw: unknown): unknown {
   return normalized;
 }
 
+// Phase 3: Position schema for v4
+const PositionSchema = z.object({
+  x: z.number().min(0).max(100),
+  y: z.number().min(0).max(100),
+  confidence: z.number().min(0).max(1).optional(),
+}).optional();
+
 const EventSchema = z.preprocess(
   normalizeEventFields,
   z.object({
@@ -183,9 +198,11 @@ const EventSchema = z.preprocess(
     team: z.enum(["home", "away"]),
     player: z.string().optional(),
     zone: z.enum(["defensive_third", "middle_third", "attacking_third"]).optional(),
+    // Phase 3: Position estimation (v4)
+    position: PositionSchema,
     details: EventDetailsSchema.optional(),
-    // v3: Allow 0.3 minimum for shots (aggressive detection)
-    confidence: z.number().min(0.3).max(1),
+    // Phase 2.10: 閾値を0.7に上げてイベント過検出を防止
+    confidence: z.number().min(0.7).max(1),
     visualEvidence: z.string().optional(),
   })
 );
@@ -235,6 +252,15 @@ const GEMINI_RESPONSE_SCHEMA = {
           team: { type: "string", enum: ["home", "away"] },
           player: { type: "string" },
           zone: { type: "string", enum: ["defensive_third", "middle_third", "attacking_third"] },
+          // Phase 3: Position estimation (v4)
+          position: {
+            type: "object",
+            properties: {
+              x: { type: "number", minimum: 0, maximum: 100, description: "0=home goal line, 100=away goal line" },
+              y: { type: "number", minimum: 0, maximum: 100, description: "0=top touchline, 100=bottom touchline" },
+              confidence: { type: "number", minimum: 0, maximum: 1, description: "Position estimate confidence" },
+            },
+          },
           details: {
             type: "object",
             properties: {
@@ -249,7 +275,7 @@ const GEMINI_RESPONSE_SCHEMA = {
               setPieceType: { type: "string", enum: ["corner", "free_kick", "penalty", "throw_in", "goal_kick", "kick_off"] },
             },
           },
-          confidence: { type: "number", minimum: 0.3, maximum: 1.0 },
+          confidence: { type: "number", minimum: 0.7, maximum: 1.0 },
           visualEvidence: { type: "string" },
         },
         required: ["timestamp", "type", "team", "confidence"],
@@ -482,18 +508,38 @@ async function processWindow(
       const events = Array.isArray(validated) ? validated : validated.events;
 
       // Convert to RawEvent format with absolute timestamps
-      const rawEvents: RawEvent[] = events.map((event) => ({
-        windowId: window.windowId,
-        relativeTimestamp: event.timestamp,
-        absoluteTimestamp: window.absoluteStart + event.timestamp,
-        type: event.type,
-        team: event.team,
-        player: event.player,
-        zone: event.zone,
-        details: event.details || {},
-        confidence: event.confidence,
-        visualEvidence: event.visualEvidence,
-      }));
+      const rawEvents: RawEvent[] = events.map((event) => {
+        // Phase 3: Normalize position to 0-100 scale
+        let position: { x: number; y: number } | undefined;
+        let positionConfidence: number | undefined;
+
+        if (event.position) {
+          const pos = event.position;
+          // Validate and normalize position values
+          if (typeof pos.x === "number" && typeof pos.y === "number" &&
+              !Number.isNaN(pos.x) && !Number.isNaN(pos.y) &&
+              pos.x >= 0 && pos.x <= 100 && pos.y >= 0 && pos.y <= 100) {
+            position = { x: pos.x, y: pos.y };
+            positionConfidence = pos.confidence ?? event.confidence;
+          }
+        }
+
+        return {
+          matchId,
+          windowId: window.windowId,
+          relativeTimestamp: event.timestamp,
+          absoluteTimestamp: window.absoluteStart + event.timestamp,
+          type: event.type,
+          team: event.team,
+          player: event.player,
+          zone: event.zone,
+          position,
+          positionConfidence,
+          details: event.details || {},
+          confidence: event.confidence,
+          visualEvidence: event.visualEvidence,
+        };
+      });
 
       return rawEvents;
     },

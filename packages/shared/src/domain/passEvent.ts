@@ -319,6 +319,70 @@ export type SetPieceEventDoc = {
 };
 
 /**
+ * Phase 6: Assist event types (新規追加)
+ */
+
+/**
+ * Assist event document
+ * Firestore: matches/{matchId}/assistEvents/{eventId}
+ *
+ * アシストはゴールに繋がったパスを記録する。
+ * 検出条件:
+ * - ゴール直前（5秒以内）の完了パス
+ * - パスの受け手がシューター（ゴールを決めた選手）
+ */
+export type AssistEventDoc = {
+  eventId: string;
+  matchId: string;
+  type: "assist";
+
+  /** 関連するパスイベントID */
+  passEventId: string;
+  /** 関連するシュート（ゴール）イベントID */
+  shotEventId: string;
+
+  /** アシストした選手 */
+  assistPlayer: {
+    trackId?: string;
+    playerId?: string;
+    teamId: TeamId;
+    /** 背番号 or 識別子 */
+    player?: string;
+    position?: Point2D;
+  };
+
+  /** ゴールを決めた選手 */
+  scorerPlayer: {
+    trackId?: string;
+    playerId?: string;
+    teamId: TeamId;
+    player?: string;
+    position?: Point2D;
+  };
+
+  /** アシストパスの時間 */
+  timestamp: number;
+  /** ゴールの時間 */
+  goalTimestamp: number;
+
+  /** パスタイプ（ラストパスの種類） */
+  passType?: "short" | "medium" | "long" | "through" | "cross";
+
+  /** パスからゴールまでの時間差（秒） */
+  timeDelta: number;
+
+  /** 検出信頼度 (0-1) */
+  confidence: number;
+  /** 検出ソース */
+  source: "auto" | "manual" | "gemini";
+
+  /** Processing version */
+  version: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+/**
  * Union type for all tracked events
  */
 export type TrackedEvent =
@@ -326,7 +390,8 @@ export type TrackedEvent =
   | CarryEventDoc
   | TurnoverEventDoc
   | ShotEventDoc
-  | SetPieceEventDoc;
+  | SetPieceEventDoc
+  | AssistEventDoc;
 
 /**
  * Pending review document

@@ -919,16 +919,19 @@ export async function recordCacheAccess(
       .add(record);
 
     // Log with clear hit/miss indicator
-    const logLevel = accessType === "hit" ? "info" : "warn";
-    const logFn = logLevel === "info" ? logger.info : logger.warn;
-    logFn(`Cache ${accessType.toUpperCase()}`, {
+    const logData = {
       matchId,
       stepName,
       accessType,
       cacheId: options?.cacheId,
       remainingTtlSeconds: options?.remainingTtlSeconds,
       fallbackReason: options?.fallbackReason,
-    });
+    };
+    if (accessType === "hit") {
+      logger.info(`Cache ${accessType.toUpperCase()}`, logData);
+    } else {
+      logger.warn(`Cache ${accessType.toUpperCase()}`, logData);
+    }
   } catch (error) {
     // Non-blocking - don't fail the pipeline for monitoring
     logger.warn("Failed to record cache access", {
