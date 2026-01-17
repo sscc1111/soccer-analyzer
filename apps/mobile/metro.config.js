@@ -30,8 +30,10 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
 
   // Use React Native specific Firebase Auth build for persistence support
   if (moduleName === "@firebase/auth" || moduleName === "firebase/auth") {
-    const firebaseAuthRNPath = require.resolve(
-      "@firebase/auth/dist/rn/index.js"
+    const firebaseAuthPath = require.resolve("@firebase/auth/package.json");
+    const firebaseAuthRNPath = firebaseAuthPath.replace(
+      "package.json",
+      "dist/rn/index.js"
     );
     return {
       filePath: firebaseAuthRNPath,
